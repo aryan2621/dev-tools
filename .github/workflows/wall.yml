@@ -1,0 +1,63 @@
+name: Wall
+
+on:
+  push:
+    branches: [main]
+    paths: ['wall/**', '.github/workflows/wall.yml']
+  pull_request:
+    paths: ['wall/**', '.github/workflows/wall.yml']
+  workflow_dispatch:
+  # The release workflow calls this one when a v* tag is pushed.
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    # Wall is macOS only (zsh shell integration, Metal llama-server).
+    name: Wall (macOS)
+    runs-on: macos-15
+    concurrency:
+      group: wall-macOS-${{ github.ref }}
+      cancel-in-progress: true
+    defaults:
+      run:
+        working-directory: wall
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: wall/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Also caches the llama.cpp sources and build that scripts/build-llama-server.sh keeps in target/.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: wall/src-tauri
+          cache-directories: wall/src-tauri/target/llama.cpp-*
+
+      - run: npm ci
+
+      - run: npx tsc -b
+
+      # beforeBuildCommand builds the bundled llama-server (cmake is on GitHub's macOS runners).
+      - name: Build app
+        id: build
+        continue-on-error: true
+        run: npm run tauri build -- --bundles app,dmg
+
+      # hdiutil on GitHub's macOS runners sometimes fails with "Resource busy"; one retry clears it.
+      - name: Build app (retry)
+        if: steps.build.outcome == 'failure'
+        run: npm run tauri build -- --bundles app,dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wall-macOS
+          path: wall/src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error

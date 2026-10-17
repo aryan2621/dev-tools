@@ -27,3 +27,7 @@ portman/gui/src-tauri/binaries/
 # Go build output (PortMan CLI)
 portman/cli/portman
 portman/cli/dist/
+
+# Wall's llama-server sidecar (scripts/build-llama-server.sh) and TypeScript build info
+wall/src-tauri/binaries/
+*.tsbuildinfo

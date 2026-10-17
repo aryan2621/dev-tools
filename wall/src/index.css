@@ -1,0 +1,242 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Wall's look follows Claude (as in Murmur): warm paper tones, a clay accent, serif headings. */
+  :root {
+    --background: 48 33% 97%;
+    --sidebar: 53 29% 95%;
+    --foreground: 30 3% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 30 3% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 30 3% 12%;
+    --primary: 15 56% 52%;
+    --primary-foreground: 0 0% 100%;
+    --brand: 15 56% 52%;
+    --brand-foreground: 0 0% 100%;
+    --secondary: 48 25% 92%;
+    --secondary-foreground: 30 3% 12%;
+    --muted: 48 25% 92%;
+    --muted-foreground: 51 3% 41%;
+    --accent: 21 54% 92%;
+    --accent-foreground: 15 53% 39%;
+    --destructive: 0 56% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 136 19% 46%;
+    --warning: 38 57% 51%;
+    --border: 50 21% 89%;
+    --input: 49 16% 81%;
+    --ring: 15 56% 52%;
+    --surface: 0 0% 100%;
+    --surface-foreground: 30 3% 12%;
+    --chart-1: 15 56% 52%;
+    --chart-2: 136 19% 46%;
+    --chart-3: 38 57% 51%;
+    --chart-4: 218 35% 57%;
+    --chart-5: 320 30% 50%;
+    --chart-6: 0 45% 55%;
+    --chart-7: 80 25% 42%;
+    --chart-8: 40 6% 50%;
+    /* Murmur's surfaces: the soft clay hero card, the dark one beside it, the sidebar. */
+    --lavender: 21 54% 92%;
+    --lavender-foreground: 16 61% 26%;
+    --forest: 30 3% 12%;
+    --forest-foreground: 50 23% 95%;
+    --sidebar-foreground: 60 3% 23%;
+    --sidebar-accent: 30 3% 12% / 0.07;
+    --sidebar-accent-foreground: 30 3% 12%;
+    --sidebar-border: 30 3% 12% / 0.08;
+    --hairline: 0 0 0 0.5px rgba(31, 30, 29, 0.12);
+    --lift: 0 1px 2px rgba(31, 30, 29, 0.04), 0 6px 20px rgba(31, 30, 29, 0.05);
+    --shadow-color: 30 3% 12%;
+    --radius: 0.625rem;
+    --app-text-caption: 0.75rem;
+    --app-text-label: 0.8125rem;
+    --app-text-body: 1rem;
+    --app-text-title: 1.25rem;
+    --app-text-heading: 1.5rem;
+    --app-text-page: 2.25rem;
+    --app-text-display: 3rem;
+  }
+
+  html[data-font-size='sm'] {
+    --app-text-caption: 0.6875rem;
+    --app-text-label: 0.8125rem;
+    --app-text-body: 0.875rem;
+    --app-text-title: 1.0625rem;
+    --app-text-heading: 1.25rem;
+    --app-text-page: 1.5rem;
+    --app-text-display: 1.75rem;
+  }
+
+  html[data-font-size='lg'] {
+    --app-text-caption: 0.875rem;
+    --app-text-label: 1rem;
+    --app-text-body: 1.125rem;
+    --app-text-title: 1.5rem;
+    --app-text-heading: 1.75rem;
+    --app-text-page: 2.25rem;
+    --app-text-display: 2.75rem;
+  }
+
+  .dark {
+    --background: 60 3% 15%;
+    --sidebar: 30 3% 12%;
+    --foreground: 50 23% 95%;
+    --card: 60 2% 18%;
+    --card-foreground: 50 23% 95%;
+    --popover: 60 2% 18%;
+    --popover-foreground: 50 23% 95%;
+    --primary: 15 63% 60%;
+    --primary-foreground: 0 0% 100%;
+    --brand: 15 63% 60%;
+    --brand-foreground: 0 0% 100%;
+    --secondary: 45 4% 22%;
+    --secondary-foreground: 50 23% 95%;
+    --muted: 45 4% 22%;
+    --muted-foreground: 49 6% 64%;
+    --accent: 13 25% 22%;
+    --accent-foreground: 19 72% 83%;
+    --destructive: 6 74% 71%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 115 33% 65%;
+    --warning: 40 67% 62%;
+    --border: 48 4% 23%;
+    --input: 50 4% 29%;
+    --ring: 15 63% 60%;
+    --surface: 60 2% 18%;
+    --surface-foreground: 50 23% 95%;
+    --chart-1: 15 63% 60%;
+    --chart-2: 115 33% 65%;
+    --chart-3: 40 67% 62%;
+    --chart-4: 218 47% 70%;
+    --chart-5: 324 35% 66%;
+    --chart-6: 0 55% 68%;
+    --chart-7: 80 30% 60%;
+    --chart-8: 45 6% 64%;
+    --lavender: 13 25% 22%;
+    --lavender-foreground: 20 74% 89%;
+    --forest: 60 4% 10%;
+    --forest-foreground: 50 23% 95%;
+    --sidebar-foreground: 50 21% 89%;
+    --sidebar-accent: 50 23% 95% / 0.08;
+    --sidebar-accent-foreground: 50 23% 95%;
+    --sidebar-border: 50 23% 95% / 0.07;
+    --hairline: 0 0 0 0.5px rgba(245, 244, 239, 0.1);
+    --lift: 0 1px 2px rgba(0, 0, 0, 0.25), 0 6px 20px rgba(0, 0, 0, 0.2);
+    --shadow-color: 0 0% 0%;
+  }
+
+  html {
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  ::selection {
+    background: hsl(var(--brand) / 0.25);
+  }
+
+  * {
+    scrollbar-width: thin; /* 6px thumb */
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased font-sans font-normal text-app-body;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* The dashboard window is translucent so its sidebar gets native vibrancy (as in Murmur);
+     its content area paints its own background. */
+  html.dashboard,
+  html.dashboard body {
+    background: transparent;
+  }
+
+  #root {
+    height: 100%;
+    min-height: 0;
+  }
+
+  html.platform-macos .mac-drag-region {
+    position: fixed;
+    inset: 0 0 auto 0;
+    height: 28px;
+    z-index: 40;
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
+  html.platform-macos .mac-window-space {
+    height: 28px;
+  }
+
+  html.platform-macos a,
+  html.platform-macos button,
+  html.platform-macos [role='button'],
+  html.platform-macos input,
+  html.platform-macos textarea,
+  html.platform-macos select {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+
+  html:not(.platform-macos) .mac-drag-region,
+  html:not(.platform-macos) .mac-window-space {
+    display: none;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply font-medium;
+    letter-spacing: -0.01em;
+  }
+
+  code,
+  pre,
+  kbd,
+  samp {
+    @apply font-mono;
+  }
+
+  svg.lucide {
+    stroke-width: 1.5;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+.xterm { height: 100%; padding: 4px 0; }
+
+.wall-output {
+  font-family: var(--wall-mono);
+  font-size: var(--wall-font-size);
+  line-height: var(--wall-line-height);
+  white-space: pre;
+  color: hsl(var(--foreground));
+}
+.wall-output > div { color: inherit !important; background: transparent !important; font: inherit !important; }
+.wall-output span { font-family: inherit !important; font-size: inherit !important; }
+.wall-output-clamp {
+  overflow-y: hidden;
+  mask-image: linear-gradient(to bottom, black 75%, transparent);
+}
+.xterm .xterm-viewport { background: transparent !important; }
+.xterm .xterm-viewport::-webkit-scrollbar { width: 0; }

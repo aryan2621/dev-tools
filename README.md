@@ -8,6 +8,7 @@
 |---|---|---|
 | **[BigView](bigview/)** | Open and edit CSV, JSON and Excel files of any size: gigabyte files open in seconds. Sort, filter, column stats, find and replace, export. | [⬇ macOS](https://github.com/aryan2621/dev-tools/releases/latest/download/BigView_0.1.0_aarch64.dmg) · [Windows](https://github.com/aryan2621/dev-tools/releases/latest/download/BigView_0.1.0_x64-setup.exe) |
 | **[Relay](relay/)** | A workbench for MCP developers: connect a server, call its tools, save tests, and watch an AI use them, with your approval for every call. | [⬇ macOS](https://github.com/aryan2621/dev-tools/releases/latest/download/Relay_0.1.0_aarch64.dmg) · [Windows](https://github.com/aryan2621/dev-tools/releases/latest/download/Relay_0.1.0_x64-setup.exe) |
+| **[Wall](wall/)** | An AI terminal with Warp-style command blocks, an editor-like input, and a local AI that suggests, explains and runs commands. Nothing leaves your Mac. | [⬇ macOS](https://github.com/aryan2621/dev-tools/releases/latest/download/Wall_0.1.0_aarch64.dmg) |
 | **[PortMan](portman/)** | See every open port and the process behind it, and stop it in one click. Desktop app and command line tool. | [⬇ macOS](https://github.com/aryan2621/dev-tools/releases/latest/download/PortMan_1.0.0_aarch64.dmg) · [Windows](https://github.com/aryan2621/dev-tools/releases/latest/download/PortMan_1.0.0_x64-setup.exe) · [Linux](https://github.com/aryan2621/dev-tools/releases/latest/download/port-man_1.0.0_amd64.AppImage) |
 
 [All downloads](https://github.com/aryan2621/dev-tools/releases/latest) · each app's page has a
@@ -25,6 +26,7 @@ user guide and a developer guide.
 | BigView | 10.13+ | 10+ | Apple silicon build for macOS. |
 | Relay | 12+ | 10+ | Apple silicon build for macOS. On-device models 2.7–16.5 GB, optional (or use your Claude, OpenAI or Gemini key). |
 | PortMan | 10.13+ | 10+ | Apple silicon build for macOS. Also Linux. |
+| Wall | 11+ | – | Apple silicon, macOS only (needs zsh for command blocks). On-device models optional. |
 
 ## Privacy
 
@@ -41,8 +43,9 @@ cd bigview   && npm install  && npm run tauri dev
 cd relay     && pnpm install && pnpm tauri dev        # needs cmake
 cd portman/gui && npm install && npm run tauri dev    # needs uv
 cd portman/cli && go build -o portman .
+cd wall      && npm install  && npm run tauri dev        # needs cmake; macOS only
 ```
 
-Each app has its own workflow in the **Actions** tab (BigView, Relay, PortMan): every push that
+Each app has its own workflow in the **Actions** tab (BigView, Relay, PortMan, Wall): every push that
 changes an app builds its macOS and Windows installers (download them from the run's
 **Artifacts**). Tagging `v*` builds them all and publishes one release.

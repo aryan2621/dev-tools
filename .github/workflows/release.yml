@@ -15,10 +15,12 @@ jobs:
     uses: ./.github/workflows/relay.yml
   portman:
     uses: ./.github/workflows/portman.yml
+  wall:
+    uses: ./.github/workflows/wall.yml
 
   release:
     name: GitHub Release
-    needs: [bigview, relay, portman]
+    needs: [bigview, relay, portman, wall]
     runs-on: ubuntu-latest
     permissions:
       contents: write
