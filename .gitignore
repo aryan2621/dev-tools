@@ -15,18 +15,10 @@ target/
 # Swift helper (Capturita)
 .build/
 
-# Python (PortMan core)
+# Python
 .venv/
 __pycache__/
 *.egg-info/
-
-# PortMan core executable (scripts/build-core.sh)
-portman/build/
-portman/gui/src-tauri/binaries/
-
-# Go build output (PortMan CLI)
-portman/cli/portman
-portman/cli/dist/
 
 # Wall's llama-server sidecar (scripts/build-llama-server.sh) and TypeScript build info
 wall/src-tauri/binaries/
