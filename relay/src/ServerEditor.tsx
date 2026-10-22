@@ -210,7 +210,48 @@ export default function ServerEditor({
               </label>
               <p className="hint">
                 Connect to a localhost or remote MCP endpoint. Legacy SSE
-                endpoints are not supported.
+                endpoints are not supported. Use Sign in from Servers for OAuth
+                when no bearer token is configured.
+              </p>
+              <label>
+                Workspace roots <span className="optional">optional</span>
+                <textarea
+                  className="code"
+                  rows={3}
+                  placeholder="/Users/you/project\n(one absolute path per line)"
+                  value={server.roots.join("\n")}
+                  onChange={(e) =>
+                    field(
+                      "roots",
+                      e.target.value
+                        .split("\n")
+                        .map((l) => l.trim())
+                        .filter(Boolean),
+                    )
+                  }
+                />
+              </label>
+              <label>
+                OAuth callback port{" "}
+                <span className="optional">optional</span>
+                <input
+                  type="number"
+                  min={1024}
+                  max={65535}
+                  placeholder="Dynamic if blank"
+                  value={server.oauthRedirectPort ?? ""}
+                  onChange={(e) =>
+                    field(
+                      "oauthRedirectPort",
+                      e.target.value ? Number(e.target.value) : undefined,
+                    )
+                  }
+                />
+              </label>
+              <p className="hint">
+                Set this when your authorization server expects a fixed{" "}
+                <code>http://localhost:PORT/callback</code> (e.g. client metadata
+                registration).
               </p>
               <label>
                 Authentication & custom headers{" "}
@@ -218,9 +259,8 @@ export default function ServerEditor({
               </label>
               {pairs(rows, setRows, "Header")}
               <p className="hint">
-                Use Authorization: Bearer … or your server’s API-key header.
-                OAuth browser sign-in is not included yet; paste a valid access
-                token instead.
+                Use <code>Authorization: Bearer …</code> for a static token, or
+                leave headers empty and sign in from Servers (OAuth).
               </p>
             </>
           ) : (
@@ -253,6 +293,24 @@ export default function ServerEditor({
               </label>
               <label>Environment variables</label>
               {pairs(env, setEnv, "Variable")}
+              <label>
+                Workspace roots <span className="optional">optional</span>
+                <textarea
+                  className="code"
+                  rows={3}
+                  placeholder="/Users/you/project"
+                  value={server.roots.join("\n")}
+                  onChange={(e) =>
+                    field(
+                      "roots",
+                      e.target.value
+                        .split("\n")
+                        .map((l) => l.trim())
+                        .filter(Boolean),
+                    )
+                  }
+                />
+              </label>
               <p className="hint">
                 Relay runs this command when you connect, finding it the same
                 way your terminal does (npx, uvx, node and Homebrew tools work).

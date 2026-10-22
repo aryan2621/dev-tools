@@ -252,17 +252,34 @@ pub async fn sign_in(s: &Server, cancel: oneshot::Receiver<()>) -> Result<(), St
     };
     let (v4, client) = match reused {
         Some(v4) => (v4, saved_client),
-        None => (
-            TcpListener::bind("127.0.0.1:0")
-                .await
-                .map_err(|e| e.to_string())?,
-            None,
-        ),
+        None => {
+            let listener = if let Some(port) = s.oauth_redirect_port {
+                TcpListener::bind(("127.0.0.1", port))
+                    .await
+                    .map_err(|e| {
+                        format!(
+                            "Could not bind OAuth callback to port {port} ({e}). Choose another port or leave blank for a dynamic port."
+                        )
+                    })?
+            } else {
+                TcpListener::bind("127.0.0.1:0")
+                    .await
+                    .map_err(|e| e.to_string())?
+            };
+            (listener, None)
+        }
     };
     let port = v4.local_addr().map_err(|e| e.to_string())?.port();
     let v6 = TcpListener::bind(("::1", port)).await.ok();
     let redirect = format!("http://localhost:{port}/callback");
-    let mut request = AuthorizationRequest::new(&redirect).with_client_name("Relay");
+    // Desktop registration uses application_type "native" so authorization servers accept a
+    // localhost redirect (SEP-837). A static Client ID Metadata Document cannot list this
+    // redirect: the port is chosen when the callback listener binds. Dynamic registration is
+    // the fallback the SDK uses when no metadata URL is set. `iss` is checked before the code
+    // is redeemed (RFC 9207); the SDK also requires it when the server advertises support.
+    let mut request = AuthorizationRequest::new(&redirect)
+        .with_client_name("Relay")
+        .with_application_type("native");
     if let Some(c) = &client {
         request = request.with_preregistered_client(&c.client_id);
     }
@@ -296,6 +313,14 @@ pub async fn sign_in(s: &Server, cancel: oneshot::Receiver<()>) -> Result<(), St
     };
     let finished = async {
         let cb = AuthorizationCallback::from_redirect_url(&url?).map_err(failed)?;
+        if let (Some(received), Some(expected)) = (cb.issuer.as_deref(), metadata.issuer.as_deref())
+        {
+            if received != expected {
+                return Err(format!(
+                    "Sign-in was refused because the issuer did not match. Expected {expected}."
+                ));
+            }
+        }
         session
             .handle_callback_with_issuer(&cb.code, &cb.csrf_token, cb.issuer.as_deref())
             .await
@@ -314,8 +339,36 @@ pub async fn sign_in(s: &Server, cancel: oneshot::Receiver<()>) -> Result<(), St
     write(&s.id, &saved).await
 }
 
+/// HTTP(S) only; returns `scheme://host[:port]` for display before opening.
+pub fn external_url_origin(url: &str) -> Result<String, String> {
+    let url = url.trim();
+    let scheme = if let Some(r) = url.strip_prefix("https://") {
+        ("https", r)
+    } else if let Some(r) = url.strip_prefix("http://") {
+        ("http", r)
+    } else {
+        return Err("Only http and https links are allowed.".into());
+    };
+    let authority = scheme
+        .1
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or(scheme.1)
+        .trim();
+    if authority.is_empty() || authority.contains('@') {
+        return Err("Invalid URL host.".into());
+    }
+    Ok(format!("{}://{}", scheme.0, authority))
+}
+
+pub fn open_external_url(url: &str) -> Result<(), String> {
+    external_url_origin(url)?;
+    open_browser(url).map_err(|e| format!("Could not open the browser: {e}"))?;
+    Ok(())
+}
+
 /// Opens `url` in the default browser.
-fn open_browser(url: &str) -> std::io::Result<std::process::ExitStatus> {
+pub(crate) fn open_browser(url: &str) -> std::io::Result<std::process::ExitStatus> {
     #[cfg(target_os = "macos")]
     let mut command = std::process::Command::new("open");
     // rundll32 takes the URL as-is; `cmd /c start` would treat its `&`s as command separators.

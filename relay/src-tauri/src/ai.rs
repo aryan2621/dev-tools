@@ -34,6 +34,7 @@ pub fn request_body(
     input: &str,
     results: &[ToolOutput],
     tools: &[ToolDef],
+    progressive: bool,
 ) -> (Value, Vec<Value>) {
     if !input.is_empty() {
         history.push(json!({"role":"user","content":input}));
@@ -44,7 +45,13 @@ pub fn request_body(
         }
         let mut body = json!({"model":p.model,"max_tokens":4096,"messages":history});
         if !tools.is_empty() {
-            body["tools"] = json!(tools.iter().map(|t| json!({"name":t.name,"description":t.description,"input_schema":t.parameters})).collect::<Vec<_>>());
+            body["tools"] = json!(tools.iter().map(|t| {
+                let mut tool = json!({"name":t.name,"description":t.description,"input_schema":t.parameters});
+                if progressive && !t.name.starts_with("relay_") {
+                    tool["defer_loading"] = json!(true);
+                }
+                tool
+            }).collect::<Vec<_>>());
         }
         (body, history)
     } else if p.id == "openai" {
@@ -171,12 +178,13 @@ pub async fn step(
     results: Vec<ToolOutput>,
     tools: Vec<ToolDef>,
     local_token: Option<String>,
+    progressive: bool,
 ) -> Result<Step, String> {
     if p.model.trim().is_empty() {
         return Err("Choose a model in Models first.".into());
     }
     let endpoint = endpoint(&p)?;
-    let (body, history) = request_body(&p, history, &input, &results, &tools);
+    let (body, history) = request_body(&p, history, &input, &results, &tools, progressive);
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(180))
         .redirect(reqwest::redirect::Policy::none())
@@ -193,9 +201,16 @@ pub async fn step(
             return Err("Save your API key in Models first.".into());
         }
         request = if p.id == "claude" {
-            request
+            let mut r = request
                 .header("x-api-key", &key)
-                .header("anthropic-version", "2023-06-01")
+                .header("anthropic-version", "2023-06-01");
+            if progressive {
+                r = r.header(
+                    "anthropic-beta",
+                    "tools-2024-04-04,tool-search-tool-20250305",
+                );
+            }
+            r
         } else {
             request.bearer_auth(&key)
         };

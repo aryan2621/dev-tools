@@ -9,20 +9,26 @@ pub fn llama_watchdog(pid_file: &str, exe: &str, args: &[String]) -> ! {
 mod mcp;
 mod models;
 mod oauth;
+mod relay_client;
+mod sandbox;
 mod store;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use tauri::Manager;
 use tokio::sync::Mutex;
 
-async fn connection(sessions: &mcp::Sessions, id: &str) -> Result<mcp::Connection, String> {
+async fn session(sessions: &mcp::Sessions, id: &str) -> Result<mcp::Session, String> {
     sessions
         .0
         .lock()
         .await
         .get(id)
-        .map(|s| s.conn.clone())
+        .cloned()
         .ok_or_else(|| "Connect this server first.".into())
+}
+
+async fn connection(sessions: &mcp::Sessions, id: &str) -> Result<mcp::Connection, String> {
+    Ok(session(sessions, id).await?.conn)
 }
 
 #[derive(Default)]
@@ -38,7 +44,11 @@ async fn load_workspace(
     app: tauri::AppHandle,
     state: tauri::State<'_, Workspace>,
 ) -> Result<Value, String> {
-    let cfg = store::load(&app)?;
+    let mut cfg = store::load(&app)?;
+    let changed = store::sync_server_profiles_from_secrets(&mut cfg)?;
+    if changed {
+        store::save(&app, &cfg)?;
+    }
     *state.0.lock().await = cfg.clone();
     // Do not trigger Keychain prompts on startup. Credentials are read only when used or updated.
     Ok(json!(cfg))
@@ -112,6 +122,7 @@ async fn delete_server(
 }
 #[tauri::command]
 async fn connect_server(
+    app: tauri::AppHandle,
     state: tauri::State<'_, Workspace>,
     sessions: tauri::State<'_, mcp::Sessions>,
     id: String,
@@ -131,7 +142,7 @@ async fn connect_server(
     }
     // Don't hold the sessions lock while connecting: other servers stay usable meanwhile.
     let result = async {
-        let c = mcp::connect_with(&server, secrets.clone()).await?;
+        let c = mcp::connect_with(app.clone(), &id, &server, secrets.clone()).await?;
         let mut info =
             tokio::time::timeout(std::time::Duration::from_secs(30), mcp::inspect(&c.conn))
                 .await
@@ -167,6 +178,12 @@ async fn sign_in_server(
         .ok_or("Server not found")?;
     if server.transport != "http" {
         return Err("Only HTTP servers sign in.".into());
+    }
+    if store::prefers_bearer_token(&server) {
+        return Err(
+            "This server has an Authorization header configured. Use Connect (not Sign in)."
+                .into(),
+        );
     }
     let (tx, rx) = tokio::sync::oneshot::channel();
     // Starting again replaces a sign-in left waiting in the browser.
@@ -212,13 +229,115 @@ async fn call_tool(
     name: String,
     arguments: Value,
 ) -> Result<Value, String> {
-    let c = connection(&sessions, &id).await?;
-    let result = mcp::call(&c, name, arguments).await;
-    if result.is_err() && c.is_closed() {
+    let s = session(&sessions, &id).await?;
+    let result = mcp::call(&s, name, arguments).await;
+    if result.is_err() && s.conn.is_closed() {
         sessions.0.lock().await.remove(&id);
         return Err(mcp::CLOSED.into());
     }
     result
+}
+
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    oauth::open_external_url(&url)
+}
+
+#[tauri::command]
+async fn respond_elicitation(
+    sessions: tauri::State<'_, mcp::Sessions>,
+    server_id: String,
+    request_id: String,
+    action: String,
+    content: Option<Value>,
+) -> Result<(), String> {
+    mcp::respond_elicitation(&sessions, &server_id, &request_id, &action, content).await
+}
+
+#[tauri::command]
+async fn cancel_active_call(
+    sessions: tauri::State<'_, mcp::Sessions>,
+    id: String,
+) -> Result<(), String> {
+    mcp::cancel_active_call(&sessions, &id).await
+}
+
+#[tauri::command]
+async fn complete_argument(
+    sessions: tauri::State<'_, mcp::Sessions>,
+    id: String,
+    reference: Value,
+    argument: Value,
+    context: Option<Value>,
+) -> Result<Value, String> {
+    let c = connection(&sessions, &id).await?;
+    mcp::complete_argument(&c, reference, argument, context).await
+}
+
+#[tauri::command]
+async fn refresh_server_catalog(
+    sessions: tauri::State<'_, mcp::Sessions>,
+    id: String,
+) -> Result<Value, String> {
+    mcp::refresh_inspect(&sessions, &id).await
+}
+
+#[tauri::command]
+async fn respond_sandbox_call(
+    sessions: tauri::State<'_, mcp::Sessions>,
+    server_id: String,
+    call_id: String,
+    allow: bool,
+) -> Result<(), String> {
+    mcp::session_bridge(&sessions, &server_id)
+        .await?
+        .respond_sandbox_call(&call_id, allow)
+        .await
+}
+
+#[tauri::command]
+async fn run_sandbox_code(
+    sessions: tauri::State<'_, mcp::Sessions>,
+    server_id: String,
+    tool_name: String,
+    code: String,
+    allowed_tools: Option<Vec<String>>,
+) -> Result<Value, String> {
+    let s = session(&sessions, &server_id).await?;
+    let bridge = s.bridge.clone();
+    let session = s.clone();
+    let mut allowed: std::collections::HashSet<String> = allowed_tools
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+    if allowed.is_empty() {
+        allowed.insert(tool_name);
+    }
+    tokio::task::spawn_blocking(move || {
+        sandbox::run_javascript_with_timeout(
+            code,
+            std::time::Duration::from_secs(30),
+            Some(move |name: String, args: Value| {
+                if !allowed.contains(&name) {
+                    return Err(format!(
+                        "Tool \"{name}\" is not in the allowed list for this sandbox."
+                    ));
+                }
+                tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|e| e.to_string())?
+                    .block_on(async {
+                        if !bridge.wait_sandbox_call(name.clone(), args.clone()).await {
+                            return Ok(json!({"error": "User declined the tool call."}));
+                        }
+                        mcp::call(&session, name, args).await
+                    })
+            }),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 #[tauri::command]
 async fn server_catalog(
@@ -257,13 +376,8 @@ async fn read_resource(
     id: String,
     uri: String,
 ) -> Result<Value, String> {
-    let c = connection(&sessions, &id).await?;
-    let p = serde_json::from_value(json!({"uri":uri})).map_err(|e| e.to_string())?;
-    let r = tokio::time::timeout(std::time::Duration::from_secs(30), c.read_resource(p))
-        .await
-        .map_err(|_| "Read timed out")?
-        .map_err(|e| e.to_string())?;
-    serde_json::to_value(r).map_err(|e| e.to_string())
+    let s = session(&sessions, &id).await?;
+    mcp::read_resource(&s, uri).await
 }
 #[tauri::command]
 async fn get_prompt(
@@ -272,14 +386,8 @@ async fn get_prompt(
     name: String,
     arguments: Value,
 ) -> Result<Value, String> {
-    let c = connection(&sessions, &id).await?;
-    let p = serde_json::from_value(json!({"name":name,"arguments":arguments}))
-        .map_err(|e| e.to_string())?;
-    let r = tokio::time::timeout(std::time::Duration::from_secs(30), c.get_prompt(p))
-        .await
-        .map_err(|_| "Prompt timed out")?
-        .map_err(|e| e.to_string())?;
-    serde_json::to_value(r).map_err(|e| e.to_string())
+    let s = session(&sessions, &id).await?;
+    mcp::get_prompt(&s, name, arguments).await
 }
 #[tauri::command]
 async fn save_provider(
@@ -314,6 +422,7 @@ async fn ai_step(
     input: String,
     results: Vec<ai::ToolOutput>,
     tools: Vec<ai::ToolDef>,
+    progressive: bool,
 ) -> Result<ai::Step, String> {
     let mut p = state
         .0
@@ -334,7 +443,7 @@ async fn ai_step(
         } else {
             None
         };
-        ai::step(p, history, input, results, tools, local_token).await
+        ai::step(p, history, input, results, tools, local_token, progressive).await
     };
     let result = tokio::select! { r=operation=>r, _=rx=>Err("Generation cancelled.".into()) };
     requests.0.lock().await.remove(&request_id);
@@ -441,6 +550,13 @@ pub fn run() {
             cancel_sign_in,
             sign_out_server,
             call_tool,
+            open_external_url,
+            respond_elicitation,
+            cancel_active_call,
+            complete_argument,
+            refresh_server_catalog,
+            respond_sandbox_call,
+            run_sandbox_code,
             server_catalog,
             read_resource,
             get_prompt,

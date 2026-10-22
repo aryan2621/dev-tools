@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import {
   Activity,
   ArrowRight,
@@ -36,8 +37,13 @@ import {
   type TestCase,
   type Catalog,
   type Provider,
+  type ElicitationPrompt,
+  type SandboxCallPrompt,
   emptyServer,
   pretty,
+  parseObject,
+  serverUsesBearerAuth,
+  suggestsBearerInsteadOfOAuth,
 } from "./types";
 import ServerEditor from "./ServerEditor";
 import Inspector from "./Inspector";
@@ -92,7 +98,10 @@ export default function App() {
     [confirmDelete, setConfirmDelete] = useState<Server | null>(null),
     [help, setHelp] = useState(false),
     [ready, setReady] = useState(false),
-    [catalog, setCatalog] = useState<Catalog | null>(null);
+    [catalog, setCatalog] = useState<Catalog | null>(null),
+    [elicitation, setElicitation] = useState<ElicitationPrompt | null>(null),
+    [elicitationJson, setElicitationJson] = useState("{}"),
+    [sandboxCall, setSandboxCall] = useState<SandboxCallPrompt | null>(null);
   const notify = useCallback(
     (text: string, error = false) => setToast({ text, error }),
     [],
@@ -124,6 +133,62 @@ export default function App() {
     const t = setTimeout(() => setToast(null), toast.error ? 12000 : 4500);
     return () => clearTimeout(t);
   }, [toast]);
+  useEffect(() => {
+    let cancelled = false;
+    const unsubs: (() => void)[] = [];
+    (async () => {
+      unsubs.push(
+        await listen<ElicitationPrompt>("mcp-elicitation", (e) => {
+          if (!cancelled) {
+            setElicitation(e.payload);
+            setElicitationJson("{}");
+          }
+        }),
+      );
+      unsubs.push(
+        await listen<SandboxCallPrompt>("mcp-sandbox-call", (e) => {
+          if (!cancelled) setSandboxCall(e.payload);
+        }),
+      );
+      unsubs.push(
+        await listen<{ serverId: string }>("mcp-catalog-changed", (e) => {
+          const sid = e.payload.serverId;
+          void api<Connection>("refresh_server_catalog", { id: sid })
+            .then((c) => {
+              if (!cancelled)
+                setConnections((v) => (v[sid] ? { ...v, [sid]: c } : v));
+            })
+            .catch(() => {});
+        }),
+      );
+    })();
+    return () => {
+      cancelled = true;
+      unsubs.forEach((u) => u());
+    };
+  }, []);
+  const respondElicitation = async (
+    action: "accept" | "decline" | "cancel",
+    content?: unknown,
+  ) => {
+    if (!elicitation) return;
+    const url =
+      action === "accept" && elicitation.mode === "url"
+        ? elicitation.url
+        : undefined;
+    try {
+      await api("respond_elicitation", {
+        serverId: elicitation.serverId,
+        requestId: elicitation.requestId,
+        action,
+        content: content ?? null,
+      });
+      setElicitation(null);
+      if (url) await api("open_external_url", { url });
+    } catch (e) {
+      onError(e);
+    }
+  };
   /** Connects a server; resolves to its error, or "" when it connected. */
   const connect = async (s: Server): Promise<string> => {
     setConnecting((v) => [...v, s.id]);
@@ -148,11 +213,16 @@ export default function App() {
   };
   const signIn = async (s: Server) => {
     setSigningIn((v) => [...v, s.id]);
+    setServerErrors((v) => ({ ...v, [s.id]: "" }));
     try {
       await api("sign_in_server", { id: s.id });
     } catch (e) {
       setSigningIn((v) => v.filter((id) => id !== s.id));
-      if (String(e) !== "Sign-in cancelled.") onError(e);
+      const msg = String(e);
+      if (msg !== "Sign-in cancelled.") {
+        setServerErrors((v) => ({ ...v, [s.id]: msg }));
+        onError(e);
+      }
       return;
     }
     setSigningIn((v) => v.filter((id) => id !== s.id));
@@ -195,6 +265,7 @@ export default function App() {
     });
     setEditor(null);
     notify("Server profile saved");
+    void api<Workspace>("load_workspace").then(setWorkspace).catch(onError);
   };
   const run = async (
     id: string,
@@ -386,7 +457,6 @@ export default function App() {
           </header>
           <section hidden={page !== "servers"}>
             <div className="section-heading">
-              <span />
               <div className="search">
                 <Search size={16} />
                 <input
@@ -431,8 +501,23 @@ export default function App() {
                     const c = connections[s.id],
                       loading = connecting.includes(s.id),
                       waiting = signingIn.includes(s.id),
-                      needsSignIn = serverErrors[s.id] === SIGN_IN_REQUIRED,
-                      failed = !!serverErrors[s.id] && !needsSignIn;
+                      bearerAuth = serverUsesBearerAuth(s),
+                      needsSignIn =
+                        serverErrors[s.id] === SIGN_IN_REQUIRED && !bearerAuth,
+                      failed =
+                        !!serverErrors[s.id] &&
+                        !needsSignIn &&
+                        serverErrors[s.id] !== SIGN_IN_REQUIRED,
+                      bearerHint =
+                        bearerAuth &&
+                        !c &&
+                        (serverErrors[s.id] === SIGN_IN_REQUIRED ||
+                          !!serverErrors[s.id]),
+                      oauthBearerHint =
+                        !bearerAuth &&
+                        !c &&
+                        !!serverErrors[s.id] &&
+                        suggestsBearerInsteadOfOAuth(serverErrors[s.id]);
                     return (
                       <article className="server-card panel" key={s.id}>
                         <div className="server-card-top">
@@ -495,6 +580,20 @@ export default function App() {
                             {waiting
                               ? "Finish signing in in your browser, then come back here."
                               : "This server needs you to sign in. Relay opens its sign-in page in your browser."}
+                          </p>
+                        )}
+                        {bearerHint && (
+                          <p className="server-notice">
+                            Uses an Authorization header (not OAuth). Click{" "}
+                            <strong>Connect</strong>.
+                          </p>
+                        )}
+                        {oauthBearerHint && (
+                          <p className="server-notice">
+                            This endpoint may not support Relay&apos;s OAuth
+                            flow. Add an <strong>Authorization</strong> header
+                            with your bearer token in Edit server, then use{" "}
+                            <strong>Connect</strong>.
                           </p>
                         )}
                         <footer>
@@ -611,6 +710,11 @@ export default function App() {
               openModels={() => setPage("models")}
               run={run}
               onError={onError}
+              connectServer={connect}
+              signInServer={signIn}
+              connecting={connecting}
+              signingIn={signingIn}
+              serverErrors={serverErrors}
             />
           </section>
           <section hidden={page !== "models"}>
@@ -793,6 +897,133 @@ export default function App() {
           >
             <X size={15} />
           </button>
+        </div>
+      )}
+      {sandboxCall && (
+        <div className="modal-backdrop">
+          <section
+            className="modal small-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="sandbox-call-title"
+          >
+            <header>
+              <h2 id="sandbox-call-title">Sandbox wants to call a tool</h2>
+            </header>
+            <div className="modal-body">
+              <p>
+                Running JavaScript requested{" "}
+                <strong>{sandboxCall.toolName}</strong> on this server.
+              </p>
+              <pre className="result-code">{pretty(sandboxCall.arguments)}</pre>
+            </div>
+            <footer>
+              <button
+                className="button"
+                onClick={async () => {
+                  try {
+                    await api("respond_sandbox_call", {
+                      serverId: sandboxCall.serverId,
+                      callId: sandboxCall.callId,
+                      allow: false,
+                    });
+                    setSandboxCall(null);
+                  } catch (e) {
+                    onError(e);
+                  }
+                }}
+              >
+                Decline
+              </button>
+              <button
+                className="button primary"
+                onClick={async () => {
+                  try {
+                    await api("respond_sandbox_call", {
+                      serverId: sandboxCall.serverId,
+                      callId: sandboxCall.callId,
+                      allow: true,
+                    });
+                    setSandboxCall(null);
+                  } catch (e) {
+                    onError(e);
+                  }
+                }}
+              >
+                Allow call
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+      {elicitation && (
+        <div className="modal-backdrop">
+          <section
+            className="modal small-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="elicit-title"
+          >
+            <header>
+              <h2 id="elicit-title">Server needs your input</h2>
+            </header>
+            <div className="modal-body">
+              <p>{elicitation.message}</p>
+              {elicitation.mode === "form" && (
+                <>
+                  <p className="hint">Reply with JSON matching the schema.</p>
+                  <textarea
+                    className="code"
+                    rows={6}
+                    value={elicitationJson}
+                    onChange={(e) => setElicitationJson(e.target.value)}
+                  />
+                </>
+              )}
+              {elicitation.mode === "url" && elicitation.url && (
+                <>
+                  <p className="hint">
+                    Origin you will be sent to:{" "}
+                    <strong>{elicitation.urlOrigin ?? elicitation.url}</strong>
+                  </p>
+                  <p className="hint">
+                    Full URL: <code>{elicitation.url}</code>
+                  </p>
+                </>
+              )}
+            </div>
+            <footer>
+              <button
+                className="button"
+                onClick={() => respondElicitation("cancel")}
+              >
+                Cancel
+              </button>
+              <button
+                className="button"
+                onClick={() => respondElicitation("decline")}
+              >
+                Decline
+              </button>
+              <button
+                className="button primary"
+                onClick={() => {
+                  if (elicitation.mode === "form") {
+                    try {
+                      void respondElicitation(
+                        "accept",
+                        parseObject(elicitationJson),
+                      );
+                    } catch (e) {
+                      onError(e);
+                    }
+                  } else void respondElicitation("accept");
+                }}
+              >
+                Accept
+              </button>
+            </footer>
+          </section>
         </div>
       )}
       {confirmDelete && (

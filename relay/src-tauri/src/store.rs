@@ -20,6 +20,12 @@ pub struct Server {
     pub headers: Vec<String>,
     #[serde(default)]
     pub env: Vec<String>,
+    /// Absolute folders this client may reveal through `roots/list`. Never a whole disk.
+    #[serde(default)]
+    pub roots: Vec<String>,
+    /// When set, OAuth callback listens on this localhost port (for static client registration).
+    #[serde(default)]
+    pub oauth_redirect_port: Option<u16>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -94,6 +100,41 @@ pub fn put_secret(account: &str, value: &str) -> Result<(), String> {
             .map_err(|e| format!("Keychain: {e}"))
     }
 }
+/// HTTP server configured with a static bearer token header (not OAuth sign-in).
+pub fn prefers_bearer_token(s: &Server) -> bool {
+    s.headers
+        .iter()
+        .any(|h| h.eq_ignore_ascii_case("authorization"))
+}
+
+fn sync_server_lists_from_secrets(s: &mut Server, secrets: &BTreeMap<String, String>) -> bool {
+    let mut changed = false;
+    for key in secrets.keys() {
+        if let Some(name) = key.strip_prefix("header:") {
+            if !name.is_empty() && !s.headers.iter().any(|h| h == name) {
+                s.headers.push(name.to_string());
+                changed = true;
+            }
+        } else if let Some(name) = key.strip_prefix("env:") {
+            if !name.is_empty() && !s.env.iter().any(|e| e == name) {
+                s.env.push(name.to_string());
+                changed = true;
+            }
+        }
+    }
+    changed
+}
+
+/// Align server header/env lists with Keychain secret keys.
+pub fn sync_server_profiles_from_secrets(cfg: &mut Config) -> Result<bool, String> {
+    let mut changed = false;
+    for s in &mut cfg.servers {
+        let secrets = server_secrets(&s.id)?;
+        changed |= sync_server_lists_from_secrets(s, &secrets);
+    }
+    Ok(changed)
+}
+
 pub fn server_secrets(id: &str) -> Result<BTreeMap<String, String>, String> {
     let raw = secret(&format!("server:{id}"))?;
     if raw.is_empty() {
@@ -136,6 +177,32 @@ pub fn validate_server(s: &Server) -> Result<(), String> {
         }
     } else {
         return Err("Unsupported transport.".into());
+    }
+    for root in &s.roots {
+        validate_root(root)?;
+    }
+    if let Some(port) = s.oauth_redirect_port {
+        if !(1024..=65535).contains(&port) {
+            return Err("OAuth redirect port must be between 1024 and 65535.".into());
+        }
+    }
+    Ok(())
+}
+
+/// A root is one folder the server is allowed to see. The filesystem root is rejected.
+fn validate_root(path: &str) -> Result<(), String> {
+    let path = std::path::Path::new(path.trim());
+    if path.as_os_str().is_empty() {
+        return Err("A root path is empty.".into());
+    }
+    if !path.is_absolute() {
+        return Err(format!(
+            "Root {} must be an absolute path.",
+            path.display()
+        ));
+    }
+    if path.components().count() <= 1 {
+        return Err("A root cannot be the whole disk.".into());
     }
     Ok(())
 }
