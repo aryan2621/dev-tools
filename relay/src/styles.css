@@ -786,13 +786,19 @@ main {
 .tool-row.active svg {
   color: var(--accent);
 }
+.tool-row > div {
+  min-width: 0;
+  flex: 1;
+}
 .tool-row strong {
   display: block;
   font-family: var(--mono);
   font-size: 12.5px;
   font-weight: 500;
   color: var(--text);
-  overflow-wrap: anywhere;
+  /* <wbr> after separators is the preferred break; this only splits a token
+     that is itself wider than the list. */
+  overflow-wrap: break-word;
 }
 .tool-row span {
   display: -webkit-box;
@@ -817,7 +823,7 @@ main {
   font-family: var(--mono);
   font-size: 18px;
   font-weight: 500;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 .tool-heading p {
   color: var(--text-2);
@@ -1756,7 +1762,7 @@ details summary {
     grid-template-columns: minmax(0, 1fr) 200px;
   }
   .inspector-grid {
-    grid-template-columns: 200px minmax(0, 1fr);
+    grid-template-columns: 240px minmax(0, 1fr);
   }
   .provider-layout {
     grid-template-columns: 190px 1fr;

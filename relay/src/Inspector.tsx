@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import {
   Braces,
   Play,
@@ -21,6 +21,21 @@ import {
   pretty,
   parseObject,
 } from "./types";
+
+/** Wrap identifiers on `_`, `-`, and `/` so a narrow list never splits a token. */
+function breakableName(name: string) {
+  return name.split(/([_/-])/).map((part, i) =>
+    part === "_" || part === "-" || part === "/" ? (
+      <Fragment key={i}>
+        {part}
+        <wbr />
+      </Fragment>
+    ) : (
+      <Fragment key={i}>{part}</Fragment>
+    ),
+  );
+}
+
 export default function Inspector({
   servers,
   connections,
@@ -242,7 +257,7 @@ export default function Inspector({
                     >
                       <Braces size={15} />
                       <div>
-                        <strong>{t.name}</strong>
+                        <strong>{breakableName(t.name)}</strong>
                         <span>
                           {t.description || "No description provided"}
                         </span>
@@ -277,7 +292,9 @@ export default function Inspector({
                     >
                       <FileText size={15} />
                       <div>
-                        <strong>{String(t.name ?? t.uri)}</strong>
+                        <strong>
+                          {breakableName(String(t.name ?? t.uri))}
+                        </strong>
                         <span>{String(t.description ?? "")}</span>
                       </div>
                     </button>
@@ -313,7 +330,7 @@ export default function Inspector({
                           ? "RESOURCES / READ"
                           : "PROMPTS / GET"}
                     </span>
-                    <h2>{selected}</h2>
+                    <h2>{breakableName(selected)}</h2>
                     <p>{tool?.description}</p>
                   </div>
                   {tool?.annotations?.readOnlyHint === true && (
