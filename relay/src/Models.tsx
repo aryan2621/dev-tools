@@ -154,11 +154,13 @@ export default function Models({
                     </>
                   ) : (
                     <button
-                      className={`button ${m.id === catalog.recommended ? "primary" : ""}`}
+                      className={`button icon-only ${m.id === catalog.recommended ? "primary" : ""}`}
                       disabled={!!download}
+                      title="Download"
+                      aria-label={`Download ${m.id}`}
                       onClick={() => start(m.id)}
                     >
-                      <ArrowDownToLine size={14} /> Download
+                      <ArrowDownToLine size={14} />
                     </button>
                   )}
                 </div>

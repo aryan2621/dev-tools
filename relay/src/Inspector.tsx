@@ -586,17 +586,23 @@ export default function Inspector({
   }, [activeId, tab]);
   useEffect(() => {
     if (!activeId) return;
+    let disposed = false;
     let unlisten: (() => void) | undefined;
     void listen<{ serverId: string; progress: { message?: string } }>(
       "mcp-progress",
       (e) => {
-        if (e.payload.serverId === activeId)
+        if (!disposed && e.payload.serverId === activeId)
           setProgress(e.payload.progress.message ?? "Working…");
       },
     ).then((fn) => {
-      unlisten = fn;
+      // Cleanup may have run before listen() resolved.
+      if (disposed) fn();
+      else unlisten = fn;
     });
-    return () => unlisten?.();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, [activeId]);
   useEffect(() => {
     let cancelled = false;
@@ -822,8 +828,13 @@ export default function Inspector({
               Stdio servers log to stderr; HTTP servers can send MCP logging
               notifications (shown here too). Last ~8 KB kept.
             </p>
-            <button className="button small" onClick={() => void loadLog()}>
-              <RefreshCw size={14} /> Refresh
+            <button
+              className="button small icon-only"
+              title="Refresh"
+              aria-label="Refresh log"
+              onClick={() => void loadLog()}
+            >
+              <RefreshCw size={14} />
             </button>
           </div>
           <pre className="result-code">

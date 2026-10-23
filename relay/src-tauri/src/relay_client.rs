@@ -5,7 +5,8 @@ use rmcp::{
     model::{
         ClientCapabilities, ClientConfig, ElicitRequestParams, ElicitResult, ElicitationAction,
         ElicitationCapability, FormElicitationCapability, Implementation, InputRequest,
-        InputRequests, InputResponses, ListRootsResult,         LoggingMessageNotificationParam, ProgressNotificationParam, Root,
+        InputRequests, InputResponses, ListRootsResult, LoggingMessageNotificationParam,
+        ProgressNotificationParam, ProgressToken, Root,
         UrlElicitationCapability,
     },
     service::{NotificationContext, RequestContext},
@@ -25,6 +26,7 @@ use tokio::sync::{oneshot, watch, Mutex};
 
 static ELICIT_SEQ: AtomicU64 = AtomicU64::new(1);
 static SANDBOX_CALL_SEQ: AtomicU64 = AtomicU64::new(1);
+static TOOL_CALL_SEQ: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -65,8 +67,10 @@ pub struct Bridge {
     log: Arc<std::sync::Mutex<String>>,
     elicit: Mutex<HashMap<String, oneshot::Sender<ElicitResult>>>,
     sandbox_calls: Mutex<HashMap<String, oneshot::Sender<bool>>>,
-    progress: Mutex<Option<watch::Sender<ProgressEvent>>>,
-    cancel: Mutex<Option<watch::Sender<bool>>>,
+    /// Progress sinks for in-flight requests, by the progress token rmcp attached.
+    progress: Mutex<HashMap<ProgressToken, watch::Sender<ProgressEvent>>>,
+    /// Cancel switches for in-flight tool calls, by call id.
+    cancels: Mutex<HashMap<u64, watch::Sender<bool>>>,
     catalog: watch::Sender<u64>,
 }
 
@@ -85,8 +89,8 @@ impl Bridge {
             log,
             elicit: Mutex::new(HashMap::new()),
             sandbox_calls: Mutex::new(HashMap::new()),
-            progress: Mutex::new(None),
-            cancel: Mutex::new(None),
+            progress: Mutex::new(HashMap::new()),
+            cancels: Mutex::new(HashMap::new()),
             catalog,
         }
     }
@@ -100,22 +104,28 @@ impl Bridge {
         );
     }
 
-    pub async fn set_call_controls(
-        &self,
-        progress: watch::Sender<ProgressEvent>,
-        cancel: watch::Sender<bool>,
-    ) {
-        *self.progress.lock().await = Some(progress);
-        *self.cancel.lock().await = Some(cancel);
+    /// Register a tool call's cancel switch; returns the id for `unregister_call`.
+    pub async fn register_call(&self, cancel: watch::Sender<bool>) -> u64 {
+        let id = TOOL_CALL_SEQ.fetch_add(1, Ordering::Relaxed);
+        self.cancels.lock().await.insert(id, cancel);
+        id
     }
 
-    pub async fn clear_call_controls(&self) {
-        *self.progress.lock().await = None;
-        *self.cancel.lock().await = None;
+    pub async fn unregister_call(&self, id: u64) {
+        self.cancels.lock().await.remove(&id);
     }
 
+    pub async fn watch_progress(&self, token: ProgressToken, tx: watch::Sender<ProgressEvent>) {
+        self.progress.lock().await.insert(token, tx);
+    }
+
+    pub async fn unwatch_progress(&self, token: &ProgressToken) {
+        self.progress.lock().await.remove(token);
+    }
+
+    /// Cancel every in-flight tool call on this server.
     pub async fn trigger_cancel(&self) {
-        if let Some(tx) = self.cancel.lock().await.as_ref() {
+        for tx in self.cancels.lock().await.values() {
             let _ = tx.send(true);
         }
     }
@@ -309,7 +319,9 @@ impl ClientHandler for RelayClient {
             .bridge
             .roots
             .iter()
-            .map(|p| Root::new(p.clone()))
+            // MCP roots are file:// URIs, not bare paths.
+            .filter_map(|p| reqwest::Url::from_directory_path(p.trim()).ok())
+            .map(|uri| Root::new(uri.to_string()))
             .collect();
         async move { Ok(ListRootsResult::new(roots)) }
     }
@@ -330,7 +342,7 @@ impl ClientHandler for RelayClient {
                 "mcp-progress",
                 json!({ "serverId": bridge.server_id, "progress": event }),
             );
-            if let Some(tx) = bridge.progress.lock().await.as_ref() {
+            if let Some(tx) = bridge.progress.lock().await.get(&params.progress_token) {
                 let _ = tx.send(event);
             }
         }

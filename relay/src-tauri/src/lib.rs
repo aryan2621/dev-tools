@@ -44,11 +44,7 @@ async fn load_workspace(
     app: tauri::AppHandle,
     state: tauri::State<'_, Workspace>,
 ) -> Result<Value, String> {
-    let mut cfg = store::load(&app)?;
-    let changed = store::sync_server_profiles_from_secrets(&mut cfg)?;
-    if changed {
-        store::save(&app, &cfg)?;
-    }
+    let cfg = store::load(&app)?;
     *state.0.lock().await = cfg.clone();
     // Do not trigger Keychain prompts on startup. Credentials are read only when used or updated.
     Ok(json!(cfg))
@@ -422,7 +418,7 @@ async fn ai_step(
     input: String,
     results: Vec<ai::ToolOutput>,
     tools: Vec<ai::ToolDef>,
-    progressive: bool,
+    mcp_instructions: Option<String>,
 ) -> Result<ai::Step, String> {
     let mut p = state
         .0
@@ -443,7 +439,16 @@ async fn ai_step(
         } else {
             None
         };
-        ai::step(p, history, input, results, tools, local_token, progressive).await
+        ai::step(
+            p,
+            history,
+            input,
+            results,
+            tools,
+            local_token,
+            mcp_instructions,
+        )
+        .await
     };
     let result = tokio::select! { r=operation=>r, _=rx=>Err("Generation cancelled.".into()) };
     requests.0.lock().await.remove(&request_id);

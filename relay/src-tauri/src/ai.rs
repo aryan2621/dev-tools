@@ -28,14 +28,72 @@ pub struct Step {
     pub usage: Value,
 }
 
+/// System context for Playground: MCP server instructions plus an explicit tool
+/// catalog. Small local models often ignore the API `tools` list for Q&A.
+fn playground_system(mcp_instructions: Option<&str>, tools: &[ToolDef]) -> Option<String> {
+    let mut lines: Vec<String> = Vec::new();
+    let catalog: Vec<String> = tools
+        .iter()
+        .filter(|t| !t.name.starts_with("relay_"))
+        .map(|t| {
+            let d = t.description.trim();
+            if d.is_empty() {
+                format!("- {}", t.name)
+            } else {
+                format!("- {}: {}", t.name, d)
+            }
+        })
+        .collect();
+    if !catalog.is_empty() {
+        lines.push(
+            "You are in Relay Playground. The user connected an MCP server with these tools:"
+                .into(),
+        );
+        lines.extend(catalog);
+        lines.push(String::new());
+        lines.push(
+            "Answer questions about what the tools can do using this list. \
+             When the user wants data or actions, call the matching tool — \
+             do not say you lack access to connected tools."
+                .into(),
+        );
+    }
+    if let Some(instr) = mcp_instructions {
+        if !lines.is_empty() {
+            lines.push(String::new());
+        }
+        lines.push(instr.to_string());
+    }
+    if lines.is_empty() {
+        None
+    } else {
+        Some(lines.join("\n"))
+    }
+}
+
 pub fn request_body(
     p: &Provider,
     mut history: Vec<Value>,
     input: &str,
     results: &[ToolOutput],
     tools: &[ToolDef],
-    progressive: bool,
+    mcp_instructions: Option<&str>,
 ) -> (Value, Vec<Value>) {
+    let system = playground_system(mcp_instructions, tools);
+    let inject_system = |history: &mut Vec<Value>| {
+        let Some(instr) = system.as_ref() else {
+            return;
+        };
+        let has_system = history
+            .iter()
+            .any(|m| m.get("role") == Some(&json!("system")));
+        if !has_system {
+            history.insert(0, json!({"role":"system","content": instr}));
+        }
+    };
+    if p.id != "claude" {
+        inject_system(&mut history);
+    }
     if !input.is_empty() {
         history.push(json!({"role":"user","content":input}));
     }
@@ -44,13 +102,12 @@ pub fn request_body(
             history.push(json!({"role":"user", "content": results.iter().map(|r| json!({"type":"tool_result","tool_use_id":r.id,"content":r.content})).collect::<Vec<_>>() }));
         }
         let mut body = json!({"model":p.model,"max_tokens":4096,"messages":history});
+        if let Some(instr) = system {
+            body["system"] = json!(instr);
+        }
         if !tools.is_empty() {
             body["tools"] = json!(tools.iter().map(|t| {
-                let mut tool = json!({"name":t.name,"description":t.description,"input_schema":t.parameters});
-                if progressive && !t.name.starts_with("relay_") {
-                    tool["defer_loading"] = json!(true);
-                }
-                tool
+                json!({"name":t.name,"description":t.description,"input_schema":t.parameters})
             }).collect::<Vec<_>>());
         }
         (body, history)
@@ -178,13 +235,20 @@ pub async fn step(
     results: Vec<ToolOutput>,
     tools: Vec<ToolDef>,
     local_token: Option<String>,
-    progressive: bool,
+    mcp_instructions: Option<String>,
 ) -> Result<Step, String> {
     if p.model.trim().is_empty() {
         return Err("Choose a model in Models first.".into());
     }
     let endpoint = endpoint(&p)?;
-    let (body, history) = request_body(&p, history, &input, &results, &tools, progressive);
+    let (body, history) = request_body(
+        &p,
+        history,
+        &input,
+        &results,
+        &tools,
+        mcp_instructions.as_deref(),
+    );
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(180))
         .redirect(reqwest::redirect::Policy::none())
@@ -201,16 +265,9 @@ pub async fn step(
             return Err("Save your API key in Models first.".into());
         }
         request = if p.id == "claude" {
-            let mut r = request
+            request
                 .header("x-api-key", &key)
-                .header("anthropic-version", "2023-06-01");
-            if progressive {
-                r = r.header(
-                    "anthropic-beta",
-                    "tools-2024-04-04,tool-search-tool-20250305",
-                );
-            }
-            r
+                .header("anthropic-version", "2023-06-01")
         } else {
             request.bearer_auth(&key)
         };

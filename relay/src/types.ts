@@ -79,6 +79,8 @@ export interface Connection {
     serverInfo?: { name: string; version: string };
     protocolVersion?: string;
     capabilities?: Record<string, unknown>;
+    /** MCP initialize instructions from the connected server. */
+    instructions?: string;
   };
   tools: Tool[];
   /** Connected with a saved sign-in (OAuth). */

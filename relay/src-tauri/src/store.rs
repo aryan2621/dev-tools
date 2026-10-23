@@ -107,34 +107,6 @@ pub fn prefers_bearer_token(s: &Server) -> bool {
         .any(|h| h.eq_ignore_ascii_case("authorization"))
 }
 
-fn sync_server_lists_from_secrets(s: &mut Server, secrets: &BTreeMap<String, String>) -> bool {
-    let mut changed = false;
-    for key in secrets.keys() {
-        if let Some(name) = key.strip_prefix("header:") {
-            if !name.is_empty() && !s.headers.iter().any(|h| h == name) {
-                s.headers.push(name.to_string());
-                changed = true;
-            }
-        } else if let Some(name) = key.strip_prefix("env:") {
-            if !name.is_empty() && !s.env.iter().any(|e| e == name) {
-                s.env.push(name.to_string());
-                changed = true;
-            }
-        }
-    }
-    changed
-}
-
-/// Align server header/env lists with Keychain secret keys.
-pub fn sync_server_profiles_from_secrets(cfg: &mut Config) -> Result<bool, String> {
-    let mut changed = false;
-    for s in &mut cfg.servers {
-        let secrets = server_secrets(&s.id)?;
-        changed |= sync_server_lists_from_secrets(s, &secrets);
-    }
-    Ok(changed)
-}
-
 pub fn server_secrets(id: &str) -> Result<BTreeMap<String, String>, String> {
     let raw = secret(&format!("server:{id}"))?;
     if raw.is_empty() {
@@ -200,6 +172,12 @@ fn validate_root(path: &str) -> Result<(), String> {
             "Root {} must be an absolute path.",
             path.display()
         ));
+    }
+    if path
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        return Err(format!("Root {} cannot contain \"..\".", path.display()));
     }
     if path.components().count() <= 1 {
         return Err("A root cannot be the whole disk.".into());

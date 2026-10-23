@@ -5,9 +5,11 @@ use crate::{
 };
 use rmcp::{
     model::{
-        CallToolRequestParams, CallToolResponse, GetPromptRequestParams, GetTaskParams, JsonObject,
-        ReadResourceRequestParams, TaskPayload, UpdateTaskParams,
+        CallToolRequest, CallToolRequestParams, ClientRequest, GetPromptRequestParams,
+        GetTaskParams, JsonObject, ReadResourceRequestParams, ServerResult, TaskPayload,
+        UpdateTaskParams,
     },
+    service::{PeerRequestOptions, ServiceError},
     service::ClientInitializeError,
     service::RunningService,
     transport::{
@@ -33,6 +35,10 @@ use tokio::{
 pub const CLOSED: &str = "The server's connection closed. Reconnect it from Servers.";
 const CALL_TIMEOUT: Duration = Duration::from_secs(90);
 const TASK_LIMIT: Duration = Duration::from_secs(15 * 60);
+const MRTR_MAX_ROUNDS: usize = 10;
+const CALL_TIMED_OUT: &str =
+    "Tool call timed out. Its server-side effects may still have occurred; inspect before retrying.";
+const CALL_CANCELLED: &str = "Tool call cancelled.";
 
 pub type Connection = Arc<RunningService<RoleClient, RelayClient>>;
 pub type Log = Arc<std::sync::Mutex<String>>;
@@ -308,15 +314,17 @@ pub async fn refresh_inspect(sessions: &Sessions, id: &str) -> Result<Value, Str
 }
 
 pub async fn inspect(c: &Connection) -> Result<Value, String> {
-    let info = c.peer_info();
-    let caps = serde_json::to_value(&info).unwrap_or_default();
+    let caps = c
+        .peer_info()
+        .map(|info| serde_json::to_value(info.as_ref()).unwrap_or_default())
+        .unwrap_or_default();
     let tools = if caps["capabilities"]["tools"].is_object() {
         serde_json::to_value(c.list_all_tools().await.map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?
     } else {
         json!([])
     };
-    Ok(json!({"info": info, "tools": tools}))
+    Ok(json!({"info": caps, "tools": tools}))
 }
 
 pub async fn session_bridge(sessions: &Sessions, id: &str) -> Result<Arc<Bridge>, String> {
@@ -347,7 +355,11 @@ pub async fn respond_elicitation(
         .await
 }
 
-async fn poll_task(session: &Session, task_id: &str) -> Result<Value, String> {
+async fn poll_task(
+    session: &Session,
+    task_id: &str,
+    cancel_rx: &mut watch::Receiver<bool>,
+) -> Result<Value, String> {
     let deadline = Instant::now() + TASK_LIMIT;
     let c = session.conn.clone();
     let bridge = session.bridge.clone();
@@ -379,12 +391,66 @@ async fn poll_task(session: &Session, task_id: &str) -> Result<Value, String> {
                     .await
                     .map_err(|e| e.to_string())?;
             }
-            TaskPayload::Working => {
-                tokio::time::sleep(Duration::from_millis(poll_ms)).await;
-            }
             _ => {
-                tokio::time::sleep(Duration::from_millis(poll_ms)).await;
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_millis(poll_ms)) => {}
+                    _ = cancelled(cancel_rx) => {
+                        let _ = c
+                            .cancel_task(rmcp::model::CancelTaskParams::new(task_id))
+                            .await;
+                        return Err(CALL_CANCELLED.into());
+                    }
+                }
             }
+        }
+    }
+}
+
+/// Resolves once the cancel switch flips to true; never if its sender goes away.
+async fn cancelled(rx: &mut watch::Receiver<bool>) {
+    loop {
+        if *rx.borrow_and_update() {
+            return;
+        }
+        if rx.changed().await.is_err() {
+            std::future::pending::<()>().await;
+        }
+    }
+}
+
+enum Wait {
+    Done(Box<ServerResult>),
+    TimedOut,
+    Cancelled,
+}
+
+/// Wait for one request's response. The idle deadline resets whenever progress arrives.
+async fn wait_response(
+    rx: &mut tokio::sync::oneshot::Receiver<Result<ServerResult, ServiceError>>,
+    progress_rx: &mut watch::Receiver<ProgressEvent>,
+    cancel_rx: &mut watch::Receiver<bool>,
+) -> Result<Wait, String> {
+    let mut deadline = Instant::now() + CALL_TIMEOUT;
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Ok(Wait::TimedOut);
+        }
+        tokio::select! {
+            changed = progress_rx.changed() => {
+                if changed.is_ok() {
+                    deadline = Instant::now() + CALL_TIMEOUT;
+                }
+            }
+            r = tokio::time::timeout(remaining, &mut *rx) => {
+                return match r {
+                    Ok(Ok(Ok(resp))) => Ok(Wait::Done(Box::new(resp))),
+                    Ok(Ok(Err(e))) => Err(e.to_string()),
+                    Ok(Err(_)) => Err(CLOSED.into()),
+                    Err(_) => Ok(Wait::TimedOut),
+                };
+            }
+            _ = cancelled(cancel_rx) => return Ok(Wait::Cancelled),
         }
     }
 }
@@ -402,49 +468,87 @@ pub async fn call(session: &Session, name: String, arguments: Value) -> Result<V
     let c = session.conn.clone();
     let bridge = session.bridge.clone();
 
-    let (progress_tx, _progress_rx) = watch::channel(ProgressEvent {
+    let (progress_tx, mut progress_rx) = watch::channel(ProgressEvent {
         progress: 0.0,
         total: None,
         message: Some("Starting…".into()),
     });
     let (cancel_tx, mut cancel_rx) = watch::channel(false);
-    bridge
-        .set_call_controls(progress_tx, cancel_tx.clone())
-        .await;
-
-    let work = async {
-        match tokio::time::timeout(CALL_TIMEOUT, c.call_tool_once(params.clone())).await {
-            Ok(Ok(CallToolResponse::Complete(r))) => {
-                serde_json::to_value(r).map_err(|e| e.to_string())
-            }
-            Ok(Ok(CallToolResponse::Task(t))) => poll_task(session, &t.task.task_id).await,
-            Ok(Ok(CallToolResponse::InputRequired(_))) => c
-                .call_tool_with_mrtr_max_rounds(params, 10)
-                .await
-                .map_err(|e| e.to_string())
-                .and_then(|r| serde_json::to_value(r).map_err(|e| e.to_string())),
-            Ok(Ok(_)) => Err("Unexpected tool response from server.".into()),
-            Ok(Err(e)) => Err(e.to_string()),
-            Err(_) => Err("Tool call timed out. Its server-side effects may still have occurred; inspect before retrying.".into()),
-        }
-    };
-
-    let result = tokio::select! {
-        r = work => r,
-        _ = async {
-            loop {
-                if cancel_rx.changed().await.is_err() {
-                    return;
-                }
-                if *cancel_rx.borrow() {
-                    return;
-                }
-            }
-        } => Err("Tool call cancelled.".into()),
-    };
-
-    bridge.clear_call_controls().await;
+    let call_id = bridge.register_call(cancel_tx).await;
+    let result = run_call(
+        session,
+        &c,
+        &bridge,
+        params,
+        &progress_tx,
+        &mut progress_rx,
+        &mut cancel_rx,
+    )
+    .await;
+    bridge.unregister_call(call_id).await;
     result
+}
+
+/// Drive one tools/call: MRTR input rounds and task polling, all under the same
+/// idle timeout and cancel switch. Cancel/timeout notify the server.
+async fn run_call(
+    session: &Session,
+    c: &Connection,
+    bridge: &Arc<Bridge>,
+    mut params: CallToolRequestParams,
+    progress_tx: &watch::Sender<ProgressEvent>,
+    progress_rx: &mut watch::Receiver<ProgressEvent>,
+    cancel_rx: &mut watch::Receiver<bool>,
+) -> Result<Value, String> {
+    for _round in 0..MRTR_MAX_ROUNDS {
+        let mut handle = c
+            .peer()
+            .send_cancellable_request(
+                ClientRequest::CallToolRequest(CallToolRequest::new(params.clone())),
+                PeerRequestOptions::no_options(),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        let token = handle.progress_token.clone();
+        bridge.watch_progress(token.clone(), progress_tx.clone()).await;
+        let waited = wait_response(&mut handle.rx, progress_rx, cancel_rx).await;
+        bridge.unwatch_progress(&token).await;
+        let response = match waited? {
+            Wait::Done(r) => r,
+            Wait::TimedOut => {
+                let _ = handle.cancel(Some("Client timed out.".into())).await;
+                return Err(CALL_TIMED_OUT.into());
+            }
+            Wait::Cancelled => {
+                let _ = handle.cancel(Some("Cancelled by user.".into())).await;
+                return Err(CALL_CANCELLED.into());
+            }
+        };
+        match *response {
+            ServerResult::CallToolResult(r) => {
+                return serde_json::to_value(r).map_err(|e| e.to_string())
+            }
+            ServerResult::CreateTaskResult(t) => {
+                return poll_task(session, &t.task.task_id, cancel_rx).await
+            }
+            ServerResult::InputRequiredResult(r) => {
+                let requests = r.input_requests.unwrap_or_default();
+                if requests.is_empty() && r.request_state.is_none() {
+                    return Err("Server asked for input but sent no requests.".into());
+                }
+                let responses = tokio::select! {
+                    responses = bridge.fulfill_inputs(c.service(), c.peer().clone(), requests) => responses,
+                    _ = cancelled(cancel_rx) => return Err(CALL_CANCELLED.into()),
+                };
+                params.input_responses = (!responses.is_empty()).then_some(responses);
+                params.request_state = r.request_state;
+            }
+            _ => return Err("Unexpected tool response from server.".into()),
+        }
+    }
+    Err(format!(
+        "Server still needed input after {MRTR_MAX_ROUNDS} rounds; giving up."
+    ))
 }
 
 pub async fn get_prompt(

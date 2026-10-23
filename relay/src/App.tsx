@@ -44,6 +44,8 @@ import {
   parseObject,
   serverUsesBearerAuth,
   suggestsBearerInsteadOfOAuth,
+  toolAnnotations,
+  toolIsDestructive,
 } from "./types";
 import ServerEditor from "./ServerEditor";
 import Inspector from "./Inspector";
@@ -136,8 +138,10 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     const unsubs: (() => void)[] = [];
+    // Cleanup may run before every listen() resolves; drop late subscriptions at once.
+    const keep = (u: () => void) => (cancelled ? u() : unsubs.push(u));
     (async () => {
-      unsubs.push(
+      keep(
         await listen<ElicitationPrompt>("mcp-elicitation", (e) => {
           if (!cancelled) {
             setElicitation(e.payload);
@@ -145,12 +149,12 @@ export default function App() {
           }
         }),
       );
-      unsubs.push(
+      keep(
         await listen<SandboxCallPrompt>("mcp-sandbox-call", (e) => {
           if (!cancelled) setSandboxCall(e.payload);
         }),
       );
-      unsubs.push(
+      keep(
         await listen<{ serverId: string }>("mcp-catalog-changed", (e) => {
           const sid = e.payload.serverId;
           void api<Connection>("refresh_server_catalog", { id: sid })
@@ -646,9 +650,11 @@ export default function App() {
                               {c.signedIn && (
                                 <button
                                   className="text-button"
+                                  title="Sign out"
+                                  aria-label={`Sign out of ${s.name}`}
                                   onClick={() => signOut(s)}
                                 >
-                                  <LogOut size={14} /> Sign out
+                                  <LogOut size={14} />
                                 </button>
                               )}
                               <button
@@ -710,6 +716,7 @@ export default function App() {
               openModels={() => setPage("models")}
               run={run}
               onError={onError}
+              notify={notify}
               connectServer={connect}
               signInServer={signIn}
               connecting={connecting}
@@ -899,23 +906,55 @@ export default function App() {
           </button>
         </div>
       )}
-      {sandboxCall && (
+      {sandboxCall && (() => {
+        const tool = connections[sandboxCall.serverId]?.tools.find(
+          (t) => t.name === sandboxCall.toolName,
+        );
+        const readOnly = !!toolAnnotations(tool)?.readOnlyHint && !toolIsDestructive(tool);
+        const args = Object.entries(
+          (sandboxCall.arguments ?? {}) as Record<string, unknown>,
+        );
+        return (
         <div className="modal-backdrop">
           <section
-            className="modal small-modal"
+            className="modal small-modal call-prompt"
             role="dialog"
             aria-modal="true"
             aria-labelledby="sandbox-call-title"
           >
-            <header>
-              <h2 id="sandbox-call-title">Sandbox wants to call a tool</h2>
+            <header className="call-prompt-head">
+              <span className="call-prompt-icon" aria-hidden>
+                <Terminal size={18} />
+              </span>
+              <div>
+                <h2 id="sandbox-call-title">Allow this tool call?</h2>
+                <p>
+                  Your script wants to run a tool on{" "}
+                  {workspace.servers.find((s) => s.id === sandboxCall.serverId)?.name ??
+                    "this server"}
+                  .
+                </p>
+              </div>
             </header>
-            <div className="modal-body">
-              <p>
-                Running JavaScript requested{" "}
-                <strong>{sandboxCall.toolName}</strong> on this server.
-              </p>
-              <pre className="result-code">{pretty(sandboxCall.arguments)}</pre>
+            <div className="modal-body call-prompt-body">
+              <div className="call-prompt-tool">
+                <code>{sandboxCall.toolName}</code>
+                <span className={`sandbox-badge ${readOnly ? "read" : "write"}`}>
+                  {readOnly ? "Read-only" : "Can change data"}
+                </span>
+              </div>
+              {args.length ? (
+                <dl className="call-prompt-args">
+                  {args.map(([k, v]) => (
+                    <div key={k}>
+                      <dt>{k}</dt>
+                      <dd>{typeof v === "string" ? v || '""' : pretty(v)}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : (
+                <p className="hint">No arguments.</p>
+              )}
             </div>
             <footer>
               <button
@@ -927,16 +966,19 @@ export default function App() {
                       callId: sandboxCall.callId,
                       allow: false,
                     });
-                    setSandboxCall(null);
                   } catch (e) {
                     onError(e);
+                  } finally {
+                    // Close even if Relay stopped waiting (timed out or cancelled), or the modal blocks the app.
+                    setSandboxCall(null);
                   }
                 }}
               >
-                Decline
+                Deny
               </button>
               <button
                 className="button primary"
+                autoFocus
                 onClick={async () => {
                   try {
                     await api("respond_sandbox_call", {
@@ -944,18 +986,21 @@ export default function App() {
                       callId: sandboxCall.callId,
                       allow: true,
                     });
-                    setSandboxCall(null);
                   } catch (e) {
                     onError(e);
+                  } finally {
+                    // Close even if Relay stopped waiting (timed out or cancelled), or the modal blocks the app.
+                    setSandboxCall(null);
                   }
                 }}
               >
-                Allow call
+                Allow
               </button>
             </footer>
           </section>
         </div>
-      )}
+        );
+      })()}
       {elicitation && (
         <div className="modal-backdrop">
           <section
