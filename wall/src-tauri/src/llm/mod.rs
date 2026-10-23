@@ -47,11 +47,10 @@ pub struct LlmRuntime {
 }
 
 impl LlmRuntime {
-    /// `shared_model_dirs` are read-only folders of other apps (e.g. LocalBoard's) to reuse models from.
-    pub fn new(data_dir: PathBuf, shared_model_dirs: Vec<PathBuf>, binary: Option<PathBuf>) -> Result<Self, LlmError> {
+    pub fn new(data_dir: PathBuf, binary: Option<PathBuf>) -> Result<Self, LlmError> {
         let supervisor = Supervisor::new(data_dir.clone(), binary)?;
         Ok(Self {
-            store: ModelStore::new(data_dir.join("models"), shared_model_dirs),
+            store: ModelStore::new(data_dir.join("models")),
             downloader: Arc::new(Downloader::new(download::HUGGING_FACE)?),
             supervisor,
             hardware: hardware::detect(),

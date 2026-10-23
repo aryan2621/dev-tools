@@ -57,16 +57,14 @@ pub fn recommended() -> &'static ModelSpec {
     &CATALOG[0]
 }
 
-/// Where GGUF files live: Wall's own models folder, plus read-only folders of other apps
-/// (LocalBoard's) so a model that is already on disk is not downloaded twice.
+/// Where GGUF files live: Wall's own models folder only.
 pub struct ModelStore {
     dir: PathBuf,
-    shared: Vec<PathBuf>,
 }
 
 impl ModelStore {
-    pub fn new(dir: PathBuf, shared: Vec<PathBuf>) -> Self {
-        Self { dir, shared }
+    pub fn new(dir: PathBuf) -> Self {
+        Self { dir }
     }
 
     /// Where a download for `id` is written.
@@ -75,10 +73,7 @@ impl ModelStore {
     }
 
     pub fn path(&self, id: &str) -> Option<PathBuf> {
-        std::iter::once(self.dir.clone())
-            .chain(self.shared.iter().cloned())
-            .map(|dir| dir.join(format!("{id}.gguf")))
-            .find(|path| path.is_file())
+        Some(self.own_path(id)).filter(|path| path.is_file())
     }
 
     /// The chosen model if installed, else the smallest installed one (lowest latency).

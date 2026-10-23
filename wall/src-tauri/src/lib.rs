@@ -8,12 +8,6 @@ mod shell;
 
 use tauri::Manager;
 
-/// LocalBoard's models folder, so models it already downloaded are reused instead of fetched again.
-fn localboard_models_dir(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
-    let own = app.path().app_data_dir().ok()?;
-    Some(own.parent()?.join("app.localboard.desktop").join("models"))
-}
-
 /// Opens (or focuses) the dashboard window: Home (stats and history) and Settings, kept out of the
 /// terminal window the way Murmur keeps its main window apart from the widget. `view` is "home"
 /// or "settings[/section]". Async so the window is built off the IPC thread.
@@ -91,8 +85,7 @@ pub fn run() {
                 app.set_menu(menu)?;
             }
             let data_dir = app.path().app_data_dir()?;
-            let shared = localboard_models_dir(app.handle()).into_iter().collect();
-            let runtime = llm::LlmRuntime::new(data_dir, shared, llm::llama_server::Supervisor::locate_binary())?;
+            let runtime = llm::LlmRuntime::new(data_dir, llm::llama_server::Supervisor::locate_binary())?;
             app.manage(runtime);
             app.manage(history::History::open(&app.path().app_data_dir()?)?);
             // Off the setup thread: scanning processes would delay the first paint.

@@ -98,8 +98,6 @@ turn on auto-run).
 | Qwen3.5 9B | 5.7 GB | 16 GB | Tricky commands and error explanations |
 | Gemma 4 12B | 6.7 GB | 16 GB | The largest option |
 
-Models that LocalBoard already downloaded are reused instead of downloaded again.
-
 ## Tabs and panes
 
 - **Tabs** sit in the title bar, named after the current folder, with a pane count when split.

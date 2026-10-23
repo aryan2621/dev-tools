@@ -72,8 +72,8 @@ src-tauri/shell/.zshrc    shell integration (OSC 133 / OSC 7 markers)
   Serif 4 headings, Inter text and JetBrains Mono in the terminal (`src/index.css`,
   `tailwind.config.js`).
 - **Data:** `history.db`, `settings.json`, `models/` and `llama-server.log` in
-  `~/Library/Application Support/app.wall.desktop`. Models from LocalBoard's folder are reused
-  read-only.
+  `~/Library/Application Support/app.wall.desktop`. Wall only uses models from its own
+  folder.
 
 ## Limitations
 
