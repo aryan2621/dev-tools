@@ -104,9 +104,10 @@ fn display_name(url: &str) -> String {
     Url::parse(&with_scheme)
         .ok()
         .and_then(|parsed| {
-            parsed
+            let last = parsed
                 .path_segments()
-                .and_then(|mut segments| segments.rfind(|segment| !segment.is_empty()).map(String::from))
+                .and_then(|mut segments| segments.rfind(|segment| !segment.is_empty()).map(String::from));
+            last.or_else(|| parsed.host_str().map(|host| host.trim_start_matches("www.").to_string()))
         })
         .unwrap_or_else(|| url.to_string())
 }

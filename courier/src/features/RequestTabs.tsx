@@ -33,7 +33,7 @@ export function RequestTabs() {
                 className="flex h-full min-w-0 items-center gap-1.5 pl-1.5 pr-0.5 text-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               >
                 <MethodBadge method={request.method} className="min-w-0" />
-                <span className="truncate text-sm">{label}</span>
+                <span title={request.name} className="truncate text-sm">{label}</span>
               </button>
               <IconAction
                 icon={X}

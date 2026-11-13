@@ -149,7 +149,7 @@ function Workspace() {
                 <ResizablePanelGroup
                   key={side ? "side" : "stack"}
                   direction={side ? "horizontal" : "vertical"}
-                  autoSaveId={side ? "courier:editor-side" : "courier:editor-v2"}
+                  autoSaveId={side ? "courier:editor-side" : "courier:editor-v3"}
                   className="min-h-0 flex-1"
                 >
                   <ResizablePanel

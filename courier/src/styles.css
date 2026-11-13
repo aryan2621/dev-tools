@@ -126,6 +126,8 @@
   button:not(:disabled), [role="button"], select, label { cursor: pointer; }
   button:disabled { cursor: not-allowed; }
   code, pre, .mono { font-family: var(--mono); font-size: 12px; }
+  /* JetBrains Mono ligates "://" into a gap; URLs must read literally */
+  code, pre, .mono, .font-mono, .cm-editor { font-variant-ligatures: none; font-feature-settings: "calt" 0; }
   kbd {
     font-family: var(--sans);
     font-variant-numeric: tabular-nums;

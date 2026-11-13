@@ -65,7 +65,7 @@ export function HistoryPanel() {
               >
                 <span className="flex min-w-0 items-center gap-1.5">
                   <MethodBadge method={entry.request.method} />
-                  <span className="truncate font-mono text-sm">{entry.request.url}</span>
+                  <span title={entry.request.url} className="truncate font-mono text-sm">{entry.request.url}</span>
                 </span>
                 <span className="flex gap-2 text-xs tabular-nums text-muted-foreground">
                   <span className="flex items-center gap-1">

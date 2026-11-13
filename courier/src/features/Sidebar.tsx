@@ -367,7 +367,7 @@ export function Sidebar({
         ])}
       >
         <MethodBadge method={request.method} className="mr-0.5" />
-        <span className="truncate">{request.name}</span>
+        <span title={request.name} className="truncate">{request.name}</span>
       </Row>
     );
   };

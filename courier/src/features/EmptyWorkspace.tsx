@@ -54,7 +54,7 @@ export function EmptyWorkspace({ onImport }: EmptyWorkspaceProps) {
                     className="flex w-full items-center gap-2 px-1 py-2 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                   >
                     <MethodBadge method={entry.request.method} />
-                    <span className="min-w-0 flex-1 truncate font-mono text-sm">{entry.request.url}</span>
+                    <span title={entry.request.url} className="min-w-0 flex-1 truncate font-mono text-sm">{entry.request.url}</span>
                     <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
                       {entry.status || "Failed"} · {formatDuration(entry.durationMs)}
                     </span>

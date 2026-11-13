@@ -209,7 +209,7 @@ export function ResponsePane({
           {formatSize(response.size)}
         </span>
         {response.mimeType && (
-          <Badge variant="outline" className="min-w-0 truncate">
+          <Badge variant="outline" title={response.mimeType} className="min-w-0 truncate">
             {response.mimeType}
           </Badge>
         )}
