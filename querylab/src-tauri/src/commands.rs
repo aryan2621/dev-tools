@@ -4,9 +4,13 @@ use crate::model::{QueryResult, SchemaInfo, DEFAULT_ROW_LIMIT};
 use crate::profile::ConnectionProfile;
 use crate::session::Sessions;
 use crate::store::{HistoryEntry, Store};
+use crate::ai::{self, AiSettingsView, Provider, Step, ToolDef, ToolOutput};
+use crate::secrets;
 use serde::Deserialize;
 use serde_json::{Map, Value};
-use tauri::State;
+use std::sync::Mutex;
+use tauri::{AppHandle, Emitter, State};
+use tokio::task::AbortHandle;
 
 type CommandResult<T> = Result<T, String>;
 
@@ -138,4 +142,71 @@ pub fn export_result(
         }
     };
     std::fs::write(path, bytes).map_err(failure)
+}
+
+#[derive(Default)]
+pub struct AiTask(Mutex<Option<AbortHandle>>);
+
+#[tauri::command]
+pub fn get_ai_settings(store: State<Store>) -> AiSettingsView {
+    store.ai_settings().view()
+}
+
+#[tauri::command]
+pub fn save_ai_provider(store: State<Store>, provider: Provider, key: Option<String>) -> CommandResult<AiSettingsView> {
+    if let Some(key) = key {
+        secrets::save_provider_key(&provider.id, key.trim())?;
+    }
+    let mut settings = store.ai_settings();
+    settings.upsert(provider);
+    store.save_ai_settings(&settings)?;
+    Ok(settings.view())
+}
+
+#[tauri::command]
+pub fn set_active_provider(store: State<Store>, id: String) -> CommandResult<AiSettingsView> {
+    let mut settings = store.ai_settings();
+    settings.active = id;
+    store.save_ai_settings(&settings)?;
+    Ok(settings.view())
+}
+
+#[tauri::command]
+pub async fn list_provider_models(provider: Provider) -> CommandResult<Vec<String>> {
+    ai::list_models(provider).await
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn ai_step(
+    app: AppHandle,
+    task: State<'_, AiTask>,
+    provider: Provider,
+    history: Vec<Value>,
+    input: String,
+    results: Vec<ToolOutput>,
+    tools: Vec<ToolDef>,
+    system: Option<String>,
+) -> CommandResult<Option<Step>> {
+    let handle = tokio::spawn(async move {
+        ai::step(provider, history, input, results, tools, system, move |text| {
+            let _ = app.emit("ai-delta", text);
+        })
+        .await
+    });
+    *task.0.lock().unwrap() = Some(handle.abort_handle());
+    let outcome = handle.await;
+    *task.0.lock().unwrap() = None;
+    match outcome {
+        Ok(step) => step.map(Some),
+        Err(error) if error.is_cancelled() => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+#[tauri::command]
+pub fn ai_cancel(task: State<AiTask>) {
+    if let Some(handle) = task.0.lock().unwrap().take() {
+        handle.abort();
+    }
 }

@@ -2,6 +2,11 @@
 
 ## Build
 
+Install on macOS: `pnpm tauri build --bundles app,dmg`, then
+`cp -R src-tauri/target/release/bundle/macos/QueryLab.app /Applications/`. Regenerate icons from
+`app-icon.svg` with `pnpm tauri icon app-icon.svg` and delete the generated `ios/` and `android/`
+folders.
+
 ```bash
 pnpm install
 pnpm tauri dev      # run with hot reload
@@ -26,6 +31,11 @@ Needs Node 22, pnpm and Rust.
 - `src-tauri/src/http.rs`, `parsers.rs`: shared HTTP client and CSV/JSON/table result parsing.
 - `src-tauri/src/store.rs`, `secrets.rs`: profiles and history as JSON in the app data directory,
   secrets in the OS keyring.
+- `src-tauri/src/ai.rs`: provider clients (Claude, OpenAI Responses, Gemini, Ollama, OpenAI-compatible),
+  SSE streaming to the `ai-delta` event, one model turn per `ai_step`. The tool loop is in
+  TypeScript. Provider keys are in the keyring (`provider:<id>`), settings in `ai.json`.
+- `src/features/ai/`: `useAgent.tsx` (loop, approvals), `tools.ts` (QueryLab tools; add a tool by
+  adding a `ToolSpec`), `AgentPanel.tsx`, `SettingsSheet.tsx`.
 - `src/hooks/useWorkbench.ts`: all UI state and backend calls. `src/components/` holds the
   reusable pieces; `src/lib/gridTheme.ts` builds the grid theme from the CSS tokens.
 

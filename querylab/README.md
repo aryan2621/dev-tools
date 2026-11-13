@@ -46,11 +46,12 @@ them.
 1. Click **+** in the sidebar, pick an engine and fill in the connection.
 2. Double-click the connection to connect. A query tab opens.
 3. Press **Cmd+Enter** (Ctrl+Enter) to run. **Cmd+K** (Ctrl+K) opens every command.
+4. Press **Cmd+J** (Ctrl+J) for the AI assistant. Add a provider in its settings first.
 
 ## Build from source
 
 ```bash
-cd querylab && pnpm install && pnpm tauri build
+cd querylab && pnpm install && pnpm tauri build --bundles app,dmg
 ```
 
 Needs Node 22, pnpm and Rust. Details in the [developer guide](docs/dev.md), usage in the

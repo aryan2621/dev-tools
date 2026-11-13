@@ -20,3 +20,15 @@ pub fn delete(account: &str) {
         let _ = entry.delete_credential();
     }
 }
+
+fn provider_account(id: &str) -> String {
+    format!("provider:{id}")
+}
+
+pub fn provider_key(id: &str) -> Option<String> {
+    read(&provider_account(id))
+}
+
+pub fn save_provider_key(id: &str, key: &str) -> Result<(), String> {
+    write(&provider_account(id), key)
+}

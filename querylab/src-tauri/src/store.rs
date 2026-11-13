@@ -1,3 +1,4 @@
+use crate::ai::AiSettings;
 use crate::profile::{ConnectionProfile, URI_FIELDS};
 use crate::{secrets, uri_credentials};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -114,6 +115,16 @@ impl Store {
         let mut profile = stored.into_iter().find(|profile| profile.id == id).ok_or_else(|| "Connection not found.".to_string())?;
         Self::hydrate(&mut profile);
         Ok(profile)
+    }
+
+    pub fn ai_settings(&self) -> AiSettings {
+        let _guard = self.lock.lock().unwrap();
+        self.read_json("ai.json")
+    }
+
+    pub fn save_ai_settings(&self, settings: &AiSettings) -> Result<(), String> {
+        let _guard = self.lock.lock().unwrap();
+        self.write_json("ai.json", settings)
     }
 
     pub fn history(&self, id: &str) -> Vec<HistoryEntry> {

@@ -188,14 +188,16 @@ export function useWorkbench() {
   const run = useCallback(
     async (tab: QueryTab, selection: string) => {
       const input = selection.trim() ? selection : tab.input;
-      if (!input.trim() || tab.runId) return;
+      if (!input.trim() || tab.runId) return {};
       const runId = crypto.randomUUID();
       patchTab(tab.id, { runId, error: null });
       try {
         const result = await api<QueryResult>("run_query", { id: tab.profileId, runId, input, operation: tab.operation, rowLimit });
         patchTab(tab.id, { result, runId: null });
+        return { result };
       } catch (error) {
         patchTab(tab.id, { error: errorText(error), result: null, runId: null });
+        return { error: errorText(error) };
       }
     },
     [patchTab, rowLimit],

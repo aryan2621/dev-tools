@@ -1,4 +1,4 @@
-import { Play, Square } from "lucide-react";
+import { Play, Sparkles, Square } from "lucide-react";
 import type { MutableRefObject } from "react";
 import type { EditorView } from "@codemirror/view";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ROW_LIMITS, type ExportFormat } from "../hooks/useWorkbench";
 import { SHORTCUTS } from "../lib/shortcuts";
 import type { EngineMeta, QueryTab } from "../types";
-import { Hint } from "./Hint";
+import { Hint, IconAction } from "./Hint";
 import { QueryEditor } from "./QueryEditor";
 import { ResultsPanel } from "./ResultsPanel";
 
@@ -21,11 +21,12 @@ interface WorkspaceProps {
   onRun: () => void;
   onCancel: () => void;
   onExport: (format: ExportFormat) => void;
+  onExplain: () => void;
   rowLimit: number;
   onRowLimit: (limit: number) => void;
 }
 
-export function Workspace({ tab, engine, connected, viewRef, selectionRef, onChange, onRun, onCancel, onExport, rowLimit, onRowLimit }: WorkspaceProps) {
+export function Workspace({ tab, engine, connected, viewRef, selectionRef, onChange, onRun, onCancel, onExport, onExplain, rowLimit, onRowLimit }: WorkspaceProps) {
   const running = tab.runId !== null;
 
   return (
@@ -61,6 +62,9 @@ export function Workspace({ tab, engine, connected, viewRef, selectionRef, onCha
             </SelectContent>
           </Select>
         )}
+        <IconAction label={tab.error ? "Explain error with AI" : "Explain query with AI"} onClick={onExplain} disabled={!tab.input.trim()}>
+          <Sparkles />
+        </IconAction>
         <Select value={String(rowLimit)} onValueChange={(limit) => onRowLimit(Number(limit))}>
           <SelectTrigger aria-label="Row limit" className="w-32">
             <SelectValue />

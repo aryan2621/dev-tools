@@ -60,7 +60,7 @@ interface FieldProps extends Omit<ComponentProps<typeof Input>, "id"> {
   error?: string;
 }
 
-function Field({ label, error, ...input }: FieldProps) {
+export function Field({ label, error, ...input }: FieldProps) {
   const id = useId();
   return (
     <div className="flex flex-col gap-1">
@@ -77,7 +77,7 @@ function Field({ label, error, ...input }: FieldProps) {
   );
 }
 
-function SelectField({ label, value, onChange, children }: { label: string; value: string; onChange: (value: string) => void; children: ReactNode }) {
+export function SelectField({ label, value, onChange, children }: { label: string; value: string; onChange: (value: string) => void; children: ReactNode }) {
   const id = useId();
   return (
     <div className="flex flex-col gap-1">

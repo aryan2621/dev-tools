@@ -87,3 +87,46 @@ export interface QueryTab {
   error: string | null;
   runId: string | null;
 }
+
+export interface ProviderConfig {
+  id: string;
+  model: string;
+  baseUrl: string;
+}
+
+export interface ProviderView extends ProviderConfig {
+  hasKey: boolean;
+}
+
+export interface AiSettings {
+  providers: ProviderView[];
+  active: string;
+}
+
+export interface ToolDef {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface ToolOutput {
+  id: string;
+  content: string;
+}
+
+export interface AiStep {
+  text: string;
+  calls: ToolCall[];
+  history: unknown[];
+}
+
+export interface RunOutcome {
+  result?: QueryResult;
+  error?: string;
+}

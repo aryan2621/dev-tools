@@ -1,3 +1,4 @@
+mod ai;
 mod commands;
 mod drivers;
 mod engine;
@@ -37,6 +38,7 @@ pub fn run() {
         .setup(|app| {
             app.manage(store::Store::open(app.handle())?);
             app.manage(session::Sessions::default());
+            app.manage(commands::AiTask::default());
             app.set_menu(menu_without_close_window(app.handle())?)?;
             Ok(())
         })
@@ -55,6 +57,12 @@ pub fn run() {
             commands::history_list,
             commands::history_clear,
             commands::export_result,
+            commands::get_ai_settings,
+            commands::save_ai_provider,
+            commands::set_active_provider,
+            commands::list_provider_models,
+            commands::ai_step,
+            commands::ai_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("failed to start");
