@@ -8,11 +8,25 @@ export interface QueryDraft {
 const SIMPLE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const BACKTICK_ENGINES = new Set(["mysql", "mariadb", "clickhouse", "databricks", "bigquery"]);
 
-export function quoteIdentifier(engine: string, name: string): string {
+function quotePart(engine: string, name: string): string {
   if (BACKTICK_ENGINES.has(engine)) return `\`${name}\``;
   if (engine === "sqlserver") return `[${name}]`;
   return SIMPLE_IDENTIFIER.test(name) ? name : `"${name.replace(/"/g, '""')}"`;
 }
+
+export function quoteIdentifier(engine: string, name: string): string {
+  return name.split(".").map((part) => quotePart(engine, part)).join(".");
+}
+
+const ROW_CAP = 100;
+
+function limitedSelect(engine: string, target: string): string {
+  if (engine === "sqlserver") return `SELECT TOP ${ROW_CAP} * FROM ${target}`;
+  if (engine === "oracle") return `SELECT * FROM ${target} FETCH FIRST ${ROW_CAP} ROWS ONLY`;
+  return `SELECT * FROM ${target} LIMIT ${ROW_CAP}`;
+}
+
+const NEEDS_QUALIFIED_NAME = new Set(["bigquery"]);
 
 const DOCUMENT_TEMPLATES: Record<string, (name: string) => QueryDraft> = {
   mongodb: (name) => ({ input: JSON.stringify({ find: name, filter: {}, limit: 100 }, null, 2), operation: null }),
@@ -24,6 +38,9 @@ const DOCUMENT_TEMPLATES: Record<string, (name: string) => QueryDraft> = {
 };
 
 export function selectRowsDraft(engine: EngineMeta, object: SchemaObject): QueryDraft | null {
-  if (engine.isSql) return { input: `SELECT * FROM ${quoteIdentifier(engine.kind, object.name)} LIMIT 100`, operation: null };
+  if (engine.isSql) {
+    if (NEEDS_QUALIFIED_NAME.has(engine.kind) && !object.name.includes(".")) return null;
+    return { input: limitedSelect(engine.kind, quoteIdentifier(engine.kind, object.name)), operation: null };
+  }
   return DOCUMENT_TEMPLATES[engine.kind]?.(object.name) ?? null;
 }

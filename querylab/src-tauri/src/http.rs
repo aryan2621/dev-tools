@@ -12,7 +12,7 @@ pub struct Http {
 impl Http {
     pub fn new(profile: &ConnectionProfile) -> DriverResult<Self> {
         let client = Client::builder()
-            .danger_accept_invalid_certs(true)
+            .danger_accept_invalid_certs(profile.trust_server_cert())
             .connect_timeout(Duration::from_secs(15))
             .timeout(Duration::from_secs(600))
             .build()?;

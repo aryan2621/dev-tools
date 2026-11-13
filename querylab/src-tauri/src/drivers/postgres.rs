@@ -2,7 +2,7 @@ use super::Driver;
 use crate::error::{DriverError, DriverResult};
 use crate::model::{QueryResult, Row, SchemaInfo};
 use crate::profile::ConnectionProfile;
-use crate::sql_split;
+use crate::sql_split::{self, Dialect};
 use async_trait::async_trait;
 use native_tls::TlsConnector;
 use postgres_native_tls::MakeTlsConnector;
@@ -116,8 +116,8 @@ impl PostgresDriver {
         self.connected.lock().unwrap().clone().ok_or(DriverError::NotConnected)
     }
 
-    async fn open_tls(config: &Config) -> DriverResult<Connected> {
-        let connector = MakeTlsConnector::new(TlsConnector::builder().danger_accept_invalid_certs(true).build()?);
+    async fn open_tls(config: &Config, trust_server_cert: bool) -> DriverResult<Connected> {
+        let connector = MakeTlsConnector::new(TlsConnector::builder().danger_accept_invalid_certs(trust_server_cert).build()?);
         let (client, connection) = config.connect(connector.clone()).await?;
         Self::drive(connection);
         Ok(Connected::new(client, Some(connector)))
@@ -175,8 +175,8 @@ impl Driver for PostgresDriver {
         let config = self.config();
         let connected = match self.profile.ssl_mode.as_str() {
             "disable" => Self::open_plain(&config).await?,
-            "require" => Self::open_tls(&config).await?,
-            _ => match Self::open_tls(&config).await {
+            "require" => Self::open_tls(&config, self.profile.trust_server_cert()).await?,
+            _ => match Self::open_tls(&config, self.profile.trust_server_cert()).await {
                 Ok(connected) => connected,
                 Err(_) => Self::open_plain(&config).await?,
             },
@@ -201,7 +201,7 @@ impl Driver for PostgresDriver {
 
     async fn run(&self, input: &str, _operation: Option<&str>, row_limit: usize) -> DriverResult<QueryResult> {
         let connected = self.current()?;
-        let statements = sql_split::statements(input);
+        let statements = sql_split::statements(input, Dialect::Postgres);
         match statements.as_slice() {
             [statement] if returns_rows(statement) && !connected.in_transaction.load(Ordering::Relaxed) => {
                 connected.fetch(statement, row_limit).await

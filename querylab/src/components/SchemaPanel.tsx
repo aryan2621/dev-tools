@@ -17,7 +17,7 @@ interface SchemaPanelProps {
   state: SchemaState;
   profileId: string | null;
   connected: boolean;
-  canSelectRows: boolean;
+  canSelectRows: (object: SchemaObject) => boolean;
   onSelectRows: (object: SchemaObject) => void;
   onInsertName: (name: string) => void;
 }
@@ -133,6 +133,7 @@ export function SchemaPanel({ state, profileId, connected, canSelectRows, onSele
         <div className="relative shrink-0 px-2 pb-2">
           <Search aria-hidden className="pointer-events-none absolute left-4 top-2 size-3 text-muted-foreground" />
           <Input
+            id="schema-filter"
             ref={filterRef}
             aria-label="Filter tables"
             placeholder="Filter tables"
@@ -184,7 +185,7 @@ export function SchemaPanel({ state, profileId, connected, canSelectRows, onSele
                   object={object}
                   open={expanded.has(object.name)}
                   onOpenChange={(open) => setOpen(object.name, open)}
-                  canSelectRows={canSelectRows}
+                  canSelectRows={canSelectRows(object)}
                   onSelectRows={onSelectRows}
                   onInsertName={onInsertName}
                 />

@@ -2,9 +2,9 @@ use super::Driver;
 use crate::error::{DriverError, DriverResult};
 use crate::model::{QueryResult, Row, SchemaInfo};
 use crate::profile::ConnectionProfile;
-use crate::sql_split;
+use crate::sql_split::{self, Dialect};
 use async_trait::async_trait;
-use mysql_async::{prelude::Queryable, Conn, OptsBuilder, Value};
+use mysql_async::{prelude::Queryable, Conn, OptsBuilder, SslOpts, Value};
 use std::sync::Mutex;
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -35,6 +35,9 @@ impl MySqlDriver {
             .pass((!profile.password.is_empty()).then(|| profile.password.clone()));
         if !profile.database.is_empty() {
             options = options.db_name(Some(profile.database.clone()));
+        }
+        if profile.ssl_mode == "require" {
+            options = options.ssl_opts(SslOpts::default().with_danger_accept_invalid_certs(profile.trust_server_cert()));
         }
         options
     }
@@ -98,7 +101,7 @@ impl Driver for MySqlDriver {
         let mut guard = self.connection.lock().await;
         let connection = guard.as_mut().ok_or(DriverError::NotConnected)?;
         let mut last = QueryResult::message("OK");
-        for statement in sql_split::statements(input) {
+        for statement in sql_split::statements(input, Dialect::Mysql) {
             last = run_statement(connection, &statement, row_limit).await?;
         }
         Ok(last)

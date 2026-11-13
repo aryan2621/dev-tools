@@ -1,4 +1,5 @@
 use crate::engine::{EngineMeta, ENGINES};
+use crate::error::DriverError;
 use crate::model::{QueryResult, SchemaInfo, DEFAULT_ROW_LIMIT};
 use crate::profile::ConnectionProfile;
 use crate::session::Sessions;
@@ -40,6 +41,15 @@ pub async fn connect(store: State<'_, Store>, sessions: State<'_, Sessions>, id:
 }
 
 #[tauri::command]
+pub async fn test_connection(mut profile: ConnectionProfile) -> CommandResult<()> {
+    profile.normalize();
+    let driver = crate::drivers::make(profile).map_err(failure)?;
+    let outcome = driver.connect().await;
+    driver.disconnect().await;
+    outcome.map_err(failure)
+}
+
+#[tauri::command]
 pub async fn disconnect(sessions: State<'_, Sessions>, id: String) -> CommandResult<()> {
     sessions.disconnect(&id).await;
     Ok(())
@@ -63,7 +73,9 @@ pub async fn run_query(
     let outcome = sessions
         .run(&id, &run_id, &input, operation.as_deref(), row_limit.unwrap_or(DEFAULT_ROW_LIMIT))
         .await;
-    store.push_history(&id, HistoryEntry::now(&input, operation.as_deref(), outcome.is_ok()))?;
+    if !matches!(outcome, Err(DriverError::Cancelled)) {
+        store.push_history(&id, HistoryEntry::now(&input, operation.as_deref(), outcome.is_ok()))?;
+    }
     outcome.map_err(failure)
 }
 

@@ -56,57 +56,49 @@ impl Store {
         std::fs::rename(&temp, &path).map_err(|e| e.to_string())
     }
 
+    fn hydrate(profile: &mut ConnectionProfile) {
+        profile.password = secrets::read(&profile.id).unwrap_or_default();
+        let id = profile.id.clone();
+        for (name, field) in URI_FIELDS {
+            let secret = secrets::read(&format!("{id}.{name}"));
+            let value = field(profile);
+            *value = uri_credentials::inserting(secret.as_deref(), value);
+        }
+    }
+
     pub fn profiles(&self) -> Vec<ConnectionProfile> {
         let _guard = self.lock.lock().unwrap();
         let mut profiles: Vec<ConnectionProfile> = self.read_json("profiles.json");
-        for profile in &mut profiles {
-            profile.password = secrets::read(&profile.id).unwrap_or_default();
-            let id = profile.id.clone();
-            for (name, field) in URI_FIELDS {
-                let secret = secrets::read(&format!("{id}.{name}"));
-                let value = field(profile);
-                *value = uri_credentials::inserting(secret.as_deref(), value);
-            }
-        }
+        profiles.iter_mut().for_each(Self::hydrate);
         profiles
     }
 
     pub fn save_profile(&self, mut profile: ConnectionProfile) -> Result<ConnectionProfile, String> {
         profile.normalize();
-        let mut all = self.profiles();
-        match all.iter_mut().find(|existing| existing.id == profile.id) {
-            Some(slot) => *slot = profile.clone(),
-            None => all.push(profile.clone()),
-        }
         let _guard = self.lock.lock().unwrap();
-        let mut stripped = all.clone();
-        for item in &mut stripped {
-            let id = item.id.clone();
-            for (name, field) in URI_FIELDS {
-                let value = field(item);
-                let (clean, secret) = uri_credentials::stripping(value);
-                *value = clean;
-                secrets::write(&format!("{id}.{name}"), secret.as_deref().unwrap_or(""))?;
-            }
-            secrets::write(&id, &item.password)?;
-            item.password.clear();
+        let mut stored: Vec<ConnectionProfile> = self.read_json("profiles.json");
+        let mut stripped = profile.clone();
+        for (name, field) in URI_FIELDS {
+            let value = field(&mut stripped);
+            let (clean, secret) = uri_credentials::stripping(value);
+            *value = clean;
+            secrets::write(&format!("{}.{name}", stripped.id), secret.as_deref().unwrap_or(""))?;
         }
-        self.write_json("profiles.json", &stripped)?;
+        secrets::write(&stripped.id, &stripped.password)?;
+        stripped.password.clear();
+        match stored.iter_mut().find(|existing| existing.id == stripped.id) {
+            Some(slot) => *slot = stripped,
+            None => stored.push(stripped),
+        }
+        self.write_json("profiles.json", &stored)?;
         Ok(profile)
     }
 
     pub fn delete_profile(&self, id: &str) -> Result<(), String> {
-        let remaining: Vec<ConnectionProfile> = self.profiles().into_iter().filter(|p| p.id != id).collect();
         let _guard = self.lock.lock().unwrap();
-        let mut stripped = remaining;
-        for item in &mut stripped {
-            item.password.clear();
-            for (_, field) in URI_FIELDS {
-                let value = field(item);
-                *value = uri_credentials::stripping(value).0;
-            }
-        }
-        self.write_json("profiles.json", &stripped)?;
+        let mut stored: Vec<ConnectionProfile> = self.read_json("profiles.json");
+        stored.retain(|profile| profile.id != id);
+        self.write_json("profiles.json", &stored)?;
         secrets::delete(id);
         for (name, _) in URI_FIELDS {
             secrets::delete(&format!("{id}.{name}"));
@@ -117,10 +109,11 @@ impl Store {
     }
 
     pub fn profile(&self, id: &str) -> Result<ConnectionProfile, String> {
-        self.profiles()
-            .into_iter()
-            .find(|profile| profile.id == id)
-            .ok_or_else(|| "Connection not found.".to_string())
+        let _guard = self.lock.lock().unwrap();
+        let stored: Vec<ConnectionProfile> = self.read_json("profiles.json");
+        let mut profile = stored.into_iter().find(|profile| profile.id == id).ok_or_else(|| "Connection not found.".to_string())?;
+        Self::hydrate(&mut profile);
+        Ok(profile)
     }
 
     pub fn history(&self, id: &str) -> Vec<HistoryEntry> {

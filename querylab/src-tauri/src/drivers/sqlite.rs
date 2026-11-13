@@ -2,7 +2,7 @@ use super::Driver;
 use crate::error::{DriverError, DriverResult};
 use crate::model::{QueryResult, Row, SchemaColumn, SchemaInfo, SchemaObject};
 use crate::profile::ConnectionProfile;
-use crate::sql_split;
+use crate::sql_split::{self, Dialect};
 use async_trait::async_trait;
 use rusqlite::{types::ValueRef, Connection, InterruptHandle};
 use std::sync::{Arc, Mutex};
@@ -97,7 +97,7 @@ impl Driver for SqliteDriver {
     }
 
     async fn run(&self, input: &str, _operation: Option<&str>, row_limit: usize) -> DriverResult<QueryResult> {
-        let statements = sql_split::statements(input);
+        let statements = sql_split::statements(input, Dialect::Sqlite);
         self.with_connection(move |connection| {
             let mut last = QueryResult::message("OK");
             for statement in &statements {

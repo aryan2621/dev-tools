@@ -18,6 +18,7 @@ import { useSchema } from "./hooks/useSchema";
 import { useWorkbench } from "./hooks/useWorkbench";
 import { SHORTCUTS } from "./lib/shortcuts";
 import { selectRowsDraft } from "./lib/templates";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import type { Profile, SchemaObject } from "./types";
 
 type PickerKind = "commands" | "switcher";
@@ -27,9 +28,12 @@ const PICKERS: Record<PickerKind, { title: string; placeholder: string }> = {
   switcher: { title: "Quick switcher", placeholder: "Switch connection or open table" },
 };
 
+const DDL_PATTERN = /^\s*(create|alter|drop|rename)\b/i;
+
 export default function App() {
   const bench = useWorkbench();
   const { activeProfile, activeEngine, activeTab } = bench;
+  const [pendingDelete, setPendingDelete] = useState<Profile | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Profile | null>(null);
   const [presetEngine, setPresetEngine] = useState<string | undefined>();
@@ -42,8 +46,12 @@ export default function App() {
   const phase = connectionPhase(live, activeProfile ? bench.connecting.has(activeProfile.id) : false);
 
   const runActive = useCallback(() => {
-    if (activeTab && live) bench.run(activeTab, selectionRef.current);
-  }, [activeTab, live, bench.run]);
+    if (!activeTab || !live) return;
+    const input = selectionRef.current.trim() || activeTab.input;
+    bench.run(activeTab, selectionRef.current).then(() => {
+      if (DDL_PATTERN.test(input)) schemaState.reload();
+    });
+  }, [activeTab, live, bench.run, schemaState.reload]);
 
   const openForm = useCallback((profile: Profile | null, engineKind?: string) => {
     setEditing(profile);
@@ -116,7 +124,15 @@ export default function App() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || !(event.metaKey || event.ctrlKey)) return;
+      const shift = event.shiftKey;
+      const stepTab = (step: number) => {
+        const index = bench.tabs.findIndex((tab) => tab.id === activeTab?.id);
+        const target = bench.tabs[(index + step + bench.tabs.length) % bench.tabs.length];
+        if (target) bench.selectTab(target.id);
+      };
       const actions: Record<string, () => void> = {
+        tab: () => stepTab(shift ? -1 : 1),
+        f: () => shift && document.getElementById("schema-filter")?.focus(),
         enter: runActive,
         t: () => activeProfile && bench.newTab(activeProfile.id),
         w: () => activeTab && bench.closeTab(activeTab.id),
@@ -130,7 +146,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [runActive, activeProfile, activeTab, bench.newTab, bench.closeTab]);
+  }, [runActive, activeProfile, activeTab, bench.tabs, bench.selectTab, bench.newTab, bench.closeTab]);
 
   const showWorkspace = activeProfile && bench.tabs.length > 0 && activeTab;
 
@@ -161,7 +177,7 @@ export default function App() {
                   onConnect={bench.connect}
                   onDisconnect={bench.disconnect}
                   onEdit={openForm}
-                  onDelete={(profile) => bench.deleteProfile(profile.id)}
+                  onDelete={setPendingDelete}
                   onAdd={() => openForm(null)}
                 />
               </ResizablePanel>
@@ -171,7 +187,7 @@ export default function App() {
                   state={schemaState}
                   profileId={activeProfile?.id ?? null}
                   connected={live}
-                  canSelectRows={Boolean(activeEngine)}
+                  canSelectRows={(object) => Boolean(activeEngine && selectRowsDraft(activeEngine, object))}
                   onSelectRows={selectRows}
                   onInsertName={insertName}
                 />
@@ -200,6 +216,8 @@ export default function App() {
                     onRun={runActive}
                     onCancel={() => bench.cancel(activeTab)}
                     onExport={(format) => activeTab.result && bench.exportResult(activeTab.result, format)}
+                    rowLimit={bench.rowLimit}
+                    onRowLimit={bench.setRowLimit}
                   />
                 </QueryTabs>
               ) : (
@@ -226,6 +244,18 @@ export default function App() {
         groups={groups}
         onOpenChange={(open) => !open && setPicker(null)}
       />
+      <AlertDialog open={pendingDelete !== null} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {pendingDelete?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>This removes the connection, its saved password and its query history. This cannot be undone.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => pendingDelete && bench.deleteProfile(pendingDelete.id)}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <Toaster />
     </TooltipProvider>
   );

@@ -14,7 +14,6 @@ const DEFAULT_VISUAL: EngineVisual = {
 
 const BY_KIND: Record<string, EngineVisual> = {
   sqlite: { icon: HardDrive, className: "border-primary/15 bg-primary/10 text-primary" },
-  duckdb: { icon: HardDrive, className: "border-primary/15 bg-primary/10 text-primary" },
   mongodb: { icon: FileJson, className: "border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400" },
   redis: { icon: KeyRound, className: "border-rose-500/20 bg-rose-500/10 text-rose-600 dark:text-rose-400" },
 };

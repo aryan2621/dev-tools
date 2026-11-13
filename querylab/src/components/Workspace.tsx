@@ -6,7 +6,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { api } from "../api";
-import type { ExportFormat } from "../hooks/useWorkbench";
+import { ROW_LIMITS, type ExportFormat } from "../hooks/useWorkbench";
 import { firstLine, formatTime } from "../lib/format";
 import { SHORTCUTS } from "../lib/shortcuts";
 import type { EngineMeta, HistoryEntry, QueryTab } from "../types";
@@ -24,11 +24,13 @@ interface WorkspaceProps {
   onRun: () => void;
   onCancel: () => void;
   onExport: (format: ExportFormat) => void;
+  rowLimit: number;
+  onRowLimit: (limit: number) => void;
 }
 
 const HISTORY_MENU_LIMIT = 30;
 
-export function Workspace({ tab, engine, connected, viewRef, selectionRef, onChange, onRun, onCancel, onExport }: WorkspaceProps) {
+export function Workspace({ tab, engine, connected, viewRef, selectionRef, onChange, onRun, onCancel, onExport, rowLimit, onRowLimit }: WorkspaceProps) {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const running = tab.runId !== null;
 
@@ -106,6 +108,18 @@ export function Workspace({ tab, engine, connected, viewRef, selectionRef, onCha
             </SelectContent>
           </Select>
         )}
+        <Select value={String(rowLimit)} onValueChange={(limit) => onRowLimit(Number(limit))}>
+          <SelectTrigger aria-label="Row limit" className="w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ROW_LIMITS.map((limit) => (
+              <SelectItem key={limit} value={String(limit)}>
+                {limit.toLocaleString()} rows
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         {engine?.consoleHint && (
           <Hint label={engine.consoleHint}>
             <span className="ml-auto min-w-0 truncate rounded-md bg-muted/60 px-2 py-1 text-[11px] text-muted-foreground">{engine.consoleHint}</span>

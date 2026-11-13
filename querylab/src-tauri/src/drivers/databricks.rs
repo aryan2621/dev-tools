@@ -43,7 +43,7 @@ impl DatabricksDriver {
             "warehouse_id": self.warehouse_id()?,
             "wait_timeout": "30s",
             "on_wait_timeout": "CONTINUE",
-            "row_limit": limit.saturating_add(1),
+            "row_limit": limit.saturating_add(1).min(i64::MAX as usize),
             "disposition": "INLINE",
             "format": "JSON_ARRAY",
         });

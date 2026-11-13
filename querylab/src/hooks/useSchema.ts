@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { SchemaInfo } from "../types";
 
@@ -6,20 +6,24 @@ export function useSchema(profileId: string | null, connected: boolean) {
   const [schema, setSchema] = useState<SchemaInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const latest = useRef(0);
 
   const load = useCallback(async () => {
+    const request = ++latest.current;
     if (!profileId || !connected) {
       setSchema(null);
+      setLoading(false);
       return;
     }
     setLoading(true);
     setError(null);
     try {
-      setSchema(await api<SchemaInfo>("schema", { id: profileId }));
+      const loaded = await api<SchemaInfo>("schema", { id: profileId });
+      if (request === latest.current) setSchema(loaded);
     } catch (failure) {
-      setError(String(failure));
+      if (request === latest.current) setError(String(failure));
     } finally {
-      setLoading(false);
+      if (request === latest.current) setLoading(false);
     }
   }, [profileId, connected]);
 

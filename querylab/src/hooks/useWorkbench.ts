@@ -4,10 +4,37 @@ import { toast } from "sonner";
 import { api } from "../api";
 import type { EngineMeta, Profile, QueryResult, QueryTab } from "../types";
 import type { QueryDraft } from "../lib/templates";
+import { attempt } from "../lib/notify";
 
 export type ExportFormat = "csv" | "json";
 
 const errorText = (error: unknown) => (typeof error === "string" ? error : error instanceof Error ? error.message : String(error));
+
+const TABS_KEY = "querylab:tabs";
+const ROW_LIMIT_KEY = "querylab:row-limit";
+export const ROW_LIMITS = [100, 1000, 10000, 100000];
+const DEFAULT_ROW_LIMIT = 100000;
+
+type SavedTab = Pick<QueryTab, "id" | "profileId" | "title" | "input" | "operation">;
+
+function readStored<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw === null ? fallback : (JSON.parse(raw) as T);
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStored(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    return;
+  }
+}
+
+const restoreTab = (saved: SavedTab): QueryTab => ({ ...saved, result: null, error: null, runId: null });
 
 export function useWorkbench() {
   const [engines, setEngines] = useState<EngineMeta[]>([]);
@@ -18,6 +45,7 @@ export function useWorkbench() {
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
   const [activeTabs, setActiveTabs] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [rowLimit, setRowLimit] = useState(() => readStored<number>(ROW_LIMIT_KEY, DEFAULT_ROW_LIMIT));
   const counter = useRef(0);
 
   const engineFor = useCallback(
@@ -36,10 +64,24 @@ export function useWorkbench() {
         setProfiles(loadedProfiles);
         setConnected(new Set(ids));
         setActiveProfileId(loadedProfiles[0]?.id ?? null);
+        const known = new Set(loadedProfiles.map((profile) => profile.id));
+        const restored = readStored<SavedTab[]>(TABS_KEY, []).filter((tab) => known.has(tab.profileId)).map(restoreTab);
+        counter.current = restored.length;
+        setTabs(restored);
       })
       .catch((error) => toast.error("Could not load workspace", { description: errorText(error) }))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    writeStored(
+      TABS_KEY,
+      tabs.map(({ id, profileId, title, input, operation }) => ({ id, profileId, title, input, operation })),
+    );
+  }, [tabs, loading]);
+
+  useEffect(() => writeStored(ROW_LIMIT_KEY, rowLimit), [rowLimit]);
 
   const patchTab = useCallback((id: string, patch: Partial<QueryTab>) => {
     setTabs((current) => current.map((tab) => (tab.id === id ? { ...tab, ...patch } : tab)));
@@ -106,7 +148,7 @@ export function useWorkbench() {
 
   const disconnect = useCallback(
     async (id: string) => {
-      await api("disconnect", { id });
+      if ((await attempt(() => api("disconnect", { id }), undefined, "Could not disconnect")) === undefined) return;
       setConnected((current) => {
         const next = new Set(current);
         next.delete(id);
@@ -121,12 +163,16 @@ export function useWorkbench() {
     const saved = await api<Profile>("profile_save", { profile });
     setProfiles((current) => (current.some((p) => p.id === saved.id) ? current.map((p) => (p.id === saved.id ? saved : p)) : [...current, saved]));
     setActiveProfileId(saved.id);
+    if (connected.has(saved.id)) {
+      await api("disconnect", { id: saved.id });
+      await connect(saved.id);
+    }
     return saved;
-  }, []);
+  }, [connected, connect]);
 
   const deleteProfile = useCallback(
     async (id: string) => {
-      await api("profile_delete", { id });
+      if ((await attempt(() => api("profile_delete", { id }), undefined, "Could not delete connection")) === undefined) return;
       setProfiles((current) => current.filter((profile) => profile.id !== id));
       setTabs((current) => current.filter((tab) => tab.profileId !== id));
       setConnected((current) => {
@@ -146,16 +192,16 @@ export function useWorkbench() {
       const runId = crypto.randomUUID();
       patchTab(tab.id, { runId, error: null });
       try {
-        const result = await api<QueryResult>("run_query", { id: tab.profileId, runId, input, operation: tab.operation });
+        const result = await api<QueryResult>("run_query", { id: tab.profileId, runId, input, operation: tab.operation, rowLimit });
         patchTab(tab.id, { result, runId: null });
       } catch (error) {
         patchTab(tab.id, { error: errorText(error), result: null, runId: null });
       }
     },
-    [patchTab],
+    [patchTab, rowLimit],
   );
 
-  const cancel = useCallback((tab: QueryTab) => tab.runId && api("cancel_run", { runId: tab.runId }), []);
+  const cancel = useCallback((tab: QueryTab) => tab.runId && attempt(() => api("cancel_run", { runId: tab.runId }), undefined, "Could not cancel query"), []);
 
   const exportResult = useCallback(async (result: QueryResult, format: ExportFormat) => {
     const path = await save({ defaultPath: `result.${format}`, filters: [{ name: format.toUpperCase(), extensions: [format] }] });
@@ -190,8 +236,9 @@ export function useWorkbench() {
     deleteProfile,
     run,
     cancel,
+    rowLimit,
+    setRowLimit,
     exportResult,
   };
 }
 
-export type Workbench = ReturnType<typeof useWorkbench>;

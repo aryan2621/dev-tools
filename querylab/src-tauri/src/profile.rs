@@ -47,6 +47,10 @@ impl ConnectionProfile {
         self.options.get(key).map(String::as_str).unwrap_or("")
     }
 
+    pub fn trust_server_cert(&self) -> bool {
+        self.option("trustServerCert") == "true"
+    }
+
     pub fn normalize(&mut self) {
         let spec = self.engine.spec();
         if self.id.is_empty() {
@@ -87,7 +91,7 @@ impl ConnectionProfile {
             return host.to_string();
         }
         match self.engine {
-            EngineKind::Databricks | EngineKind::Snowflake => format!("{}://{}", self.ssl_mode, host),
+            EngineKind::Databricks => format!("{}://{}", self.ssl_mode, host),
             _ => format!("{}://{}:{}", self.ssl_mode, host, self.port),
         }
     }

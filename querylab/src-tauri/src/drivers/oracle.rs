@@ -10,6 +10,22 @@ const SCHEMA_SQL: &str = "SELECT c.table_name, CASE WHEN v.view_name IS NULL THE
 CASE c.nullable WHEN 'Y' THEN 'YES' ELSE 'NO' END, 'NO' \
 FROM user_tab_columns c LEFT JOIN user_views v ON v.view_name = c.table_name ORDER BY c.table_name, c.column_id";
 
+fn is_plsql(statement: &str) -> bool {
+    let upper = statement.trim_start().to_uppercase();
+    let words: Vec<&str> = upper.split_whitespace().take(5).collect();
+    matches!(words.first(), Some(&"BEGIN") | Some(&"DECLARE"))
+        || (words.first() == Some(&"CREATE") && words.iter().any(|word| matches!(*word, "PROCEDURE" | "FUNCTION" | "TRIGGER" | "PACKAGE" | "TYPE")))
+}
+
+fn terminate(statement: &str) -> String {
+    let trimmed = statement.trim();
+    if is_plsql(trimmed) {
+        format!("{}\n/", trimmed.trim_end_matches('/').trim_end())
+    } else {
+        format!("{};", trimmed.trim_end_matches([';', '/']).trim_end())
+    }
+}
+
 pub struct OracleDriver {
     profile: ConnectionProfile,
 }
@@ -22,10 +38,12 @@ impl OracleDriver {
     async fn query(&self, sql: &str) -> DriverResult<String> {
         let profile = &self.profile;
         let target = format!("//{}:{}/{}", profile.host, profile.port, profile.database);
-        let statement = sql.trim().trim_end_matches([';', '/']).trim_end();
+        if profile.password.contains('"') {
+            return Err(DriverError::message("Oracle passwords containing a double quote are not supported"));
+        }
         let script = format!(
-            "WHENEVER SQLERROR CONTINUE\nCONNECT {}/\"{}\"@{}\nSET MARKUP CSV ON QUOTE ON\nSET FEEDBACK OFF\nSET PAGESIZE 0\nSET HEADING ON\n{};\nEXIT\n",
-            profile.user, profile.password, target, statement
+            "WHENEVER SQLERROR CONTINUE\nCONNECT {}/\"{}\"@{}\nSET MARKUP CSV ON QUOTE ON\nSET FEEDBACK OFF\nSET PAGESIZE 0\nSET HEADING ON\n{}\nEXIT\n",
+            profile.user, profile.password, target, terminate(sql)
         );
         let program = process::require_for(profile.engine.spec())?;
         let spec = ProcessSpec::new(program, vec!["-L".into(), "-S".into(), "/nolog".into()]).stdin(script);
@@ -33,7 +51,7 @@ impl OracleDriver {
         let failure = output
             .stdout
             .lines()
-            .find(|line| ["ORA-", "SP2-", "ERROR"].iter().any(|prefix| line.trim_start().starts_with(prefix)));
+            .find(|line| ["ORA-", "SP2-"].iter().any(|prefix| line.trim_start().starts_with(prefix)));
         match failure {
             Some(line) => Err(DriverError::message(line.trim())),
             None => Ok(output.stdout),

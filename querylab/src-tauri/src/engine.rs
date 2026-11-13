@@ -101,6 +101,7 @@ pub struct EngineMeta {
 const NETWORK: &[&str] = &["host", "port", "user", "password", "database"];
 const NETWORK_SSL: &[&str] = &["host", "port", "user", "password", "database", "sslMode"];
 const SQL_SSL: &[&str] = &["disable", "prefer", "require"];
+const MYSQL_SSL: &[&str] = &["disable", "require"];
 const HTTP_SSL: &[&str] = &["http", "https"];
 const DYNAMO_OPS: &[&str] = &[
     "list-tables", "describe-table", "get-item", "put-item", "delete-item", "query", "scan",
@@ -139,8 +140,8 @@ pub static ENGINES: [EngineSpec; 20] = [
     EngineSpec { kind: EngineKind::Postgresql, display_name: "PostgreSQL", summary: "Advanced open-source RDBMS", default_port: 5432, fields: NETWORK_SSL, ssl_modes: SQL_SSL, default_ssl_mode: "prefer", ..BASE },
     EngineSpec { kind: EngineKind::Cockroachdb, display_name: "CockroachDB", summary: "Distributed SQL (PostgreSQL wire)", default_port: 26257, fields: NETWORK_SSL, ssl_modes: SQL_SSL, default_ssl_mode: "prefer", ..BASE },
     EngineSpec { kind: EngineKind::Redshift, display_name: "Amazon Redshift", category: "Cloud Managed", summary: "AWS data warehouse (PostgreSQL wire)", default_port: 5439, fields: NETWORK_SSL, ssl_modes: SQL_SSL, default_ssl_mode: "prefer", ..BASE },
-    EngineSpec { kind: EngineKind::Mysql, display_name: "MySQL", summary: "World's most popular open-source RDBMS", default_port: 3306, ..BASE },
-    EngineSpec { kind: EngineKind::Mariadb, display_name: "MariaDB", summary: "MySQL-compatible community fork", default_port: 3306, ..BASE },
+    EngineSpec { kind: EngineKind::Mysql, display_name: "MySQL", summary: "World's most popular open-source RDBMS", default_port: 3306, fields: NETWORK_SSL, ssl_modes: MYSQL_SSL, ..BASE },
+    EngineSpec { kind: EngineKind::Mariadb, display_name: "MariaDB", summary: "MySQL-compatible community fork", default_port: 3306, fields: NETWORK_SSL, ssl_modes: MYSQL_SSL, ..BASE },
     EngineSpec {
         kind: EngineKind::Sqlserver, display_name: "SQL Server", summary: "Microsoft relational database", default_port: 1433,
         driver_kind: DriverKind::Cli, console_hint: Some("Enter a query"),

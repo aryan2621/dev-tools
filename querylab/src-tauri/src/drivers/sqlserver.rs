@@ -24,7 +24,6 @@ impl SqlServerDriver {
         let mut args: Vec<String> = vec![
             "-S".into(),
             format!("{},{}", profile.host, profile.port),
-            "-C".into(),
             "-s".into(),
             "\t".into(),
             "-W".into(),
@@ -32,6 +31,9 @@ impl SqlServerDriver {
             "65535".into(),
             "-b".into(),
         ];
+        if profile.trust_server_cert() {
+            args.push("-C".into());
+        }
         if profile.user.is_empty() {
             args.push("-E".into());
         } else {

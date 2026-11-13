@@ -4,11 +4,14 @@ import type { EngineMeta, Profile } from "../types";
 import { ChevronRight, FolderOpen, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { api } from "../api";
+import { attempt } from "../lib/notify";
 import { InlineError } from "./InlineError";
 import { EngineMark } from "./EngineMark";
 
@@ -45,7 +48,6 @@ const PORT_MAX = 65535;
 
 function validate(draft: Profile, has: (field: string) => boolean): FieldErrors {
   const errors: FieldErrors = {};
-  if (!draft.name.trim()) errors.name = "Enter a name";
   if (has("file") && !draft.filePath.trim()) errors.filePath = "Choose a database file";
   if (has("uri") && !draft.uri.trim()) errors.uri = "Enter a connection URI";
   if (has("host") && !draft.host.trim()) errors.host = "Enter a host";
@@ -99,6 +101,7 @@ export function ConnectionForm({ open: isOpen, engines, initial, engineKind, onC
   const [draft, setDraft] = useState<Profile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [touched, setTouched] = useState<Set<string>>(new Set());
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
@@ -130,6 +133,12 @@ export function ConnectionForm({ open: isOpen, engines, initial, engineKind, onC
     if (typeof path === "string") set("filePath", path);
   };
 
+  const test = async () => {
+    setTesting(true);
+    await attempt(() => api("test_connection", { profile: draft }), "Connection works", "Connection failed");
+    setTesting(false);
+  };
+
   const submit = async () => {
     if (firstError) {
       setTouched(new Set(Object.keys(errors)));
@@ -148,7 +157,9 @@ export function ConnectionForm({ open: isOpen, engines, initial, engineKind, onC
   };
 
   const showSsl = has("sslMode") && engine.sslModes.length > 0;
-  const hasAdvanced = has("awsProfile") || has("endpointUrl") || showSsl || engine.optionFields.length > 0;
+  const showTrust = showSsl || engine.kind === "sqlserver";
+  const trustId = useId();
+  const hasAdvanced = has("awsProfile") || has("endpointUrl") || showTrust || engine.optionFields.length > 0;
 
   return (
     <Dialog open={isOpen} onOpenChange={(next) => !next && onClose()}>
@@ -181,7 +192,7 @@ export function ConnectionForm({ open: isOpen, engines, initial, engineKind, onC
               ))}
             </SelectField>
           )}
-          {text("name", "Name")}
+          {text("name", "Name (optional)")}
           {has("file") && (
             <div className="flex items-end gap-2">
               <div className="flex-1">{text("filePath", "Database file")}</div>
@@ -227,6 +238,12 @@ export function ConnectionForm({ open: isOpen, engines, initial, engineKind, onC
                     ))}
                   </SelectField>
                 )}
+                {showTrust && (
+                  <div className="flex items-center gap-2">
+                    <Checkbox id={trustId} checked={draft.options.trustServerCert === "true"} onCheckedChange={(checked) => set("options", { ...draft.options, trustServerCert: checked === true ? "true" : "false" })} />
+                    <Label htmlFor={trustId} className="text-sm">Trust server certificate (skip TLS verification)</Label>
+                  </div>
+                )}
                 {engine.optionFields.map((field) => (
                   <Field key={field.key} label={field.label} value={draft.options[field.key] ?? ""} onChange={(event) => set("options", { ...draft.options, [field.key]: event.target.value })} />
                 ))}
@@ -248,6 +265,10 @@ export function ConnectionForm({ open: isOpen, engines, initial, engineKind, onC
                 {firstError}
               </span>
             )}
+            <Button type="button" variant="outline" onClick={test} disabled={testing || Boolean(firstError)}>
+              {testing && <Loader2 className="animate-spin" />}
+              Test connection
+            </Button>
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>

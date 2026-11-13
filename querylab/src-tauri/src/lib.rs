@@ -15,12 +15,29 @@ mod uri_credentials;
 
 use tauri::Manager;
 
+fn menu_without_close_window(handle: &tauri::AppHandle) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{Menu, MenuItemKind};
+    let menu = Menu::default(handle)?;
+    for item in menu.items()? {
+        let MenuItemKind::Submenu(submenu) = item else { continue };
+        for child in submenu.items()? {
+            if let MenuItemKind::Predefined(predefined) = &child {
+                if predefined.text()?.starts_with("Close") {
+                    submenu.remove(&child)?;
+                }
+            }
+        }
+    }
+    Ok(menu)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             app.manage(store::Store::open(app.handle())?);
             app.manage(session::Sessions::default());
+            app.set_menu(menu_without_close_window(app.handle())?)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -29,6 +46,7 @@ pub fn run() {
             commands::profile_save,
             commands::profile_delete,
             commands::connect,
+            commands::test_connection,
             commands::disconnect,
             commands::connected_ids,
             commands::run_query,
