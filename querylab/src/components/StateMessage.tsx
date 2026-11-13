@@ -15,7 +15,7 @@ export function StateMessage({ icon: Icon, iconClassName, title, hint, className
   return (
     <div role="status" className={cn("flex h-full flex-col items-start justify-center gap-1 p-4", className)}>
       {Icon && (
-        <span className="mb-2 grid size-8 place-items-center rounded-lg border bg-card text-muted-foreground shadow-sm">
+        <span className="mb-2 grid size-8 place-items-center rounded-md border bg-card text-muted-foreground">
           <Icon aria-hidden className={cn("size-4", iconClassName)} />
         </span>
       )}

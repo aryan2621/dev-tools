@@ -1,9 +1,11 @@
-import { Database, Play, Plus, RefreshCw, Search, SquarePen, Table2, Unplug, X, Plug } from "lucide-react";
+import { Database, Play, Plus, RefreshCw, SquarePen, Table2, Unplug, X, Plug } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EditorView } from "@codemirror/view";
 import { IconAction } from "./components/Hint";
 import { CommandPicker, type PickerGroup } from "./components/CommandPicker";
 import { ConnectionForm } from "./components/ConnectionForm";
+import { HistoryPanel } from "./components/HistoryPanel";
+import { Rail, type Panel } from "./components/Rail";
 import { ConnectionList } from "./components/ConnectionList";
 import { connectionPhase } from "./components/ConnectionState";
 import { QueryTabs } from "./components/QueryTabs";
@@ -28,11 +30,14 @@ const PICKERS: Record<PickerKind, { title: string; placeholder: string }> = {
   switcher: { title: "Quick switcher", placeholder: "Switch connection or open table" },
 };
 
+const PANEL_TITLES: Record<Panel, string> = { connections: "Connections", schema: "Schema", history: "History" };
+
 const DDL_PATTERN = /^\s*(create|alter|drop|rename)\b/i;
 
 export default function App() {
   const bench = useWorkbench();
   const { activeProfile, activeEngine, activeTab } = bench;
+  const [panel, setPanel] = useState<Panel>("connections");
   const [pendingDelete, setPendingDelete] = useState<Profile | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Profile | null>(null);
@@ -153,19 +158,20 @@ export default function App() {
   return (
     <TooltipProvider delayDuration={400}>
       <div className="flex h-screen w-screen flex-col">
+        <div className="flex min-h-0 flex-1">
+        <Rail panel={panel} onPanel={setPanel} />
         <ResizablePanelGroup direction="horizontal" autoSaveId="querylab-layout" className="min-h-0 flex-1">
-          <ResizablePanel id="sidebar" order={1} defaultSize={20} minSize={15} maxSize={32} className="flex flex-col bg-sidebar">
-            <div data-tauri-drag-region className="flex h-9 shrink-0 items-center gap-2 border-b pl-[76px] pr-2">
-              <span aria-hidden className="grid size-5 place-items-center rounded-md bg-primary/10 text-primary">
-                <Database className="size-3" />
-              </span>
-              <span className="text-xs font-semibold tracking-tight">QueryLab</span>
-              <IconAction label="Commands" keys={SHORTCUTS.palette} className="ml-auto" onClick={() => setPicker("commands")}>
-                <Search />
-              </IconAction>
+          <ResizablePanel id="sidebar" order={1} defaultSize={22} minSize={15} maxSize={36} className="flex flex-col bg-sidebar">
+            <div data-tauri-drag-region className="flex h-9 shrink-0 items-center gap-2 border-b pl-3 pr-2">
+              <span className="text-sm font-medium">{PANEL_TITLES[panel]}</span>
+              {panel === "connections" && (
+                <IconAction label="New connection" className="ml-auto" onClick={() => openForm(null)}>
+                  <Plus />
+                </IconAction>
+              )}
             </div>
-            <ResizablePanelGroup direction="vertical" autoSaveId="querylab-sidebar" className="min-h-0 flex-1">
-              <ResizablePanel id="connections" order={1} defaultSize={40} minSize={15}>
+            <div className="min-h-0 flex-1">
+              {panel === "connections" && (
                 <ConnectionList
                   profiles={bench.profiles}
                   engineFor={bench.engineFor}
@@ -180,9 +186,8 @@ export default function App() {
                   onDelete={setPendingDelete}
                   onAdd={() => openForm(null)}
                 />
-              </ResizablePanel>
-              <ResizableHandle />
-              <ResizablePanel id="schema" order={2} defaultSize={60} minSize={15}>
+              )}
+              {panel === "schema" && (
                 <SchemaPanel
                   state={schemaState}
                   profileId={activeProfile?.id ?? null}
@@ -191,11 +196,18 @@ export default function App() {
                   onSelectRows={selectRows}
                   onInsertName={insertName}
                 />
-              </ResizablePanel>
-            </ResizablePanelGroup>
+              )}
+              {panel === "history" && (
+                <HistoryPanel
+                  profileId={activeProfile?.id ?? null}
+                  refreshKey={activeTab?.runId ?? null}
+                  onPick={(entry) => activeTab && bench.patchTab(activeTab.id, { input: entry.input, operation: entry.operation ?? activeTab.operation })}
+                />
+              )}
+            </div>
           </ResizablePanel>
           <ResizableHandle />
-          <ResizablePanel id="main" order={2} defaultSize={80} minSize={40}>
+          <ResizablePanel id="main" order={2} defaultSize={78} minSize={40}>
             <main className="flex h-full min-w-0 flex-col bg-background">
               {showWorkspace ? (
                 <QueryTabs
@@ -221,6 +233,8 @@ export default function App() {
                   />
                 </QueryTabs>
               ) : (
+                <>
+                <div data-tauri-drag-region className="h-9 shrink-0 border-b bg-sidebar" />
                 <Welcome
                   engines={bench.engines}
                   profile={activeProfile}
@@ -230,10 +244,12 @@ export default function App() {
                   onConnect={bench.connect}
                   onNewTab={(id) => bench.newTab(id)}
                 />
+                </>
               )}
             </main>
           </ResizablePanel>
         </ResizablePanelGroup>
+        </div>
         <StatusBar profile={activeProfile} engine={activeEngine} phase={phase} running={activeTab?.runId != null} />
       </div>
       <ConnectionForm open={formOpen} engines={bench.engines} initial={editing} engineKind={presetEngine} onClose={() => setFormOpen(false)} onSave={bench.saveProfile} />
