@@ -104,6 +104,7 @@ export function ConnectionForm({ open: isOpen, engines, initial, engineKind, onC
   const [testing, setTesting] = useState(false);
   const [touched, setTouched] = useState<Set<string>>(new Set());
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const trustId = useId();
 
   useEffect(() => {
     if (isOpen) {
@@ -158,7 +159,6 @@ export function ConnectionForm({ open: isOpen, engines, initial, engineKind, onC
 
   const showSsl = has("sslMode") && engine.sslModes.length > 0;
   const showTrust = showSsl || engine.kind === "sqlserver";
-  const trustId = useId();
   const hasAdvanced = has("awsProfile") || has("endpointUrl") || showTrust || engine.optionFields.length > 0;
 
   return (
