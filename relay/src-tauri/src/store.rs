@@ -27,12 +27,16 @@ pub struct Server {
     #[serde(default)]
     pub oauth_redirect_port: Option<u16>,
 }
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
 pub struct Provider {
     pub id: String,
     pub model: String,
     pub base_url: String,
+    pub temperature: Option<f32>,
+    pub top_p: Option<f32>,
+    pub max_tokens: Option<u32>,
+    pub num_ctx: Option<u32>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

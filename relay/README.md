@@ -9,7 +9,7 @@
 - **Inspect** its tools, resources and prompts, call them with a form, and read the server's logs.
 - **Test**: save a call with its expected answer and re-run them all after every change.
 - **Playground**: give an AI a task and watch it pick your tools. You approve every call. Use a
-  model that runs on your Mac (Qwen3.5, Gemma 4, Qwen3.8) or Claude, OpenAI and Gemini with your key.
+  Claude, OpenAI, Gemini, a local Ollama server or any OpenAI-compatible endpoint.
 
 **[⬇ Download for macOS](https://github.com/aryan2621/dev-tools/releases/latest/download/Relay_0.1.0_aarch64.dmg)**
 · [Windows](https://github.com/aryan2621/dev-tools/releases/latest/download/Relay_0.1.0_x64-setup.exe)
@@ -30,15 +30,14 @@
    ```
 
 **Windows:** run `Relay_0.1.0_x64-setup.exe` (if SmartScreen says it protected your PC, click
-**More info → Run anyway**). On-device models are macOS-only for now; on Windows the Playground
-uses Claude, OpenAI or Gemini with your key.
+**More info → Run anyway**).
 
 ## Quick start
 
 1. **Servers → Try the example server** (works right away), or **Add a connection** with your
    own, e.g. command `npx`, arguments `-y @modelcontextprotocol/server-everything`.
 2. **Inspector:** pick a tool, fill in its arguments, **Run tool**. **Keep this as a test** to save it.
-3. **Playground:** pick a model (download one from **Models**, or add an API key), ask something
+3. **Playground:** pick a provider (add an API key or an Ollama server under **Providers**), ask something
    that needs your tools, and approve each call (**Approve & run**).
 4. **Tests → Run all** after you change your server. **Activity** shows every call and its timing.
 

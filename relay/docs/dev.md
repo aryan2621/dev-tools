@@ -4,8 +4,7 @@
 
 ## Build and install
 
-Needs Node 22, pnpm, Rust (stable) and `cmake` (for llama.cpp's server). macOS on Apple silicon,
-or Windows (without on-device models).
+Needs Node 22, pnpm, Rust (stable). macOS, Linux or Windows.
 
 ```bash
 cd relay
@@ -19,13 +18,6 @@ pnpm tauri dev      # run with hot reload
 pnpm ui:dev         # the UI alone in a browser (port 1428), no Tauri
 pnpm typecheck      # TypeScript check
 ```
-
-On macOS, both `tauri dev` and `tauri build` first run `scripts/build-llama-server.sh`, which downloads
-llama.cpp (pinned version), builds `llama-server` as one static binary with the Metal shaders
-embedded, and puts it in `src-tauri/binaries/` for Tauri to bundle as a sidecar. It's skipped
-when that version is already built.
-
-That step and the sidecar live in `src-tauri/tauri.macos.conf.json`, so Windows builds skip them.
 
 CI (`../.github/workflows/relay.yml`) builds the macOS `.dmg` and the Windows installer on every
 push that changes `relay/`; tagging `v*` builds every app in this repo and publishes one release.
@@ -41,7 +33,7 @@ Source Serif and JetBrains Mono). It talks to Rust through Tauri commands, wrapp
 | `src/ServerEditor.tsx` | Add / edit a connection (stdio or HTTP, headers, env) |
 | `src/Inspector.tsx` | Tools, resources, prompts and the stdio log; run a request, save a test |
 | `src/Playground.tsx` | Chat with a model that can call the selected tools, with approval |
-| `src/Models.tsx`, `src/Providers.tsx` | On-device model downloads; API-key providers |
+| `src/Providers.tsx` | AI providers: Claude, OpenAI, Gemini, Ollama, OpenAI-compatible |
 | `src/types.ts` | Shared types and the provider list |
 
 | File | What it is |
@@ -49,8 +41,7 @@ Source Serif and JetBrains Mono). It talks to Rust through Tauri commands, wrapp
 | `src-tauri/src/lib.rs` | Tauri commands: workspace, connect/disconnect, call tool, AI step, tests, logs |
 | `src-tauri/src/mcp.rs` | MCP clients (via `rmcp`): stdio with a login-shell `PATH`, Streamable HTTP, stderr tail |
 | `src-tauri/src/oauth.rs` | MCP OAuth sign-in: browser, one-time local callback, tokens in the Keychain, renewal |
-| `src-tauri/src/ai.rs` | One request format per provider: Claude, OpenAI (Responses API), and OpenAI-compatible (Gemini, llama.cpp) |
-| `src-tauri/src/models.rs` | Model catalog, recommendation by RAM, downloads, starting/stopping llama-server |
+| `src-tauri/src/ai.rs` | One request format per provider: Claude, OpenAI (Responses API), and Gemini and Ollama/OpenAI-compatible (chat completions); streams replies as `ai-delta` events and lists models |
 | `src-tauri/src/store.rs` | `workspace.json` (atomic writes), Keychain secrets, server validation |
 | `src-tauri/src/example.rs` | The bundled example MCP server (`echo`, `add`) |
 
@@ -67,8 +58,5 @@ Source Serif and JetBrains Mono). It talks to Rust through Tauri commands, wrapp
 - **Playground loop:** each `ai_step` sends the history plus the selected tools to the provider
   and returns the model's text and tool calls. The UI shows the calls, waits for approval, runs
   them through MCP and sends the results back in the next step (up to 12 rounds).
-- **Local models:** llama-server runs under a small watchdog process (Relay's binary with
-  `--llama-watchdog`). Relay holds the watchdog's stdin; when Relay exits for any reason,
-  including a crash, macOS closes it and the watchdog stops the model server, so it never runs on alone.
 - **Tests:** a test is a saved tool call plus optional text. It passes when the call doesn't
   return an error and the response contains that text.

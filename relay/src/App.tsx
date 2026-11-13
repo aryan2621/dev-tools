@@ -35,7 +35,6 @@ import {
   type Connection,
   type Trace,
   type TestCase,
-  type Catalog,
   type Provider,
   type ElicitationPrompt,
   type SandboxCallPrompt,
@@ -50,7 +49,7 @@ import {
 import ServerEditor from "./ServerEditor";
 import Inspector from "./Inspector";
 import Playground from "./Playground";
-import Models from "./Models";
+import Providers from "./Providers";
 
 const navigation = [
   { id: "servers", name: "Servers", icon: Network },
@@ -71,9 +70,9 @@ const pageInfo: Record<string, [string, string]> = {
   ],
   tests: ["Tests", "Saved requests to re-run whenever your server changes."],
   activity: ["Activity", "Every tool call made this session."],
-  models: [
-    "Models",
-    "The AI the Playground uses: on this Mac, or with your API key.",
+  providers: [
+    "Providers",
+    "The AI the Playground uses: a hosted model with your API key, or a local server.",
   ],
 };
 /** connect_server's error when the server wants a browser sign-in (OAuth). */
@@ -100,7 +99,6 @@ export default function App() {
     [confirmDelete, setConfirmDelete] = useState<Server | null>(null),
     [help, setHelp] = useState(false),
     [ready, setReady] = useState(false),
-    [catalog, setCatalog] = useState<Catalog | null>(null),
     [elicitation, setElicitation] = useState<ElicitationPrompt | null>(null),
     [elicitationJson, setElicitationJson] = useState("{}"),
     [sandboxCall, setSandboxCall] = useState<SandboxCallPrompt | null>(null);
@@ -119,12 +117,7 @@ export default function App() {
         setReady(true);
       })
       .catch(onError);
-    api<Catalog>("model_catalog").then(setCatalog).catch(onError);
   }, [onError]);
-  const refreshCatalog = useCallback(
-    () => api<Catalog>("model_catalog").then(setCatalog),
-    [],
-  );
   const saveProvider = (p: Provider) =>
     setWorkspace((w) => ({
       ...w,
@@ -403,11 +396,11 @@ export default function App() {
         </nav>
         <nav className="nav-secondary">
           <button
-            className={page === "models" ? "active" : ""}
-            onClick={() => setPage("models")}
+            className={page === "providers" ? "active" : ""}
+            onClick={() => setPage("providers")}
           >
             <Cpu size={18} />
-            <span>Models</span>
+            <span>Providers</span>
           </button>
         </nav>
         <div className="sidebar-bottom">
@@ -711,9 +704,7 @@ export default function App() {
               servers={workspace.servers}
               connections={connections}
               configured={workspace.providers}
-              catalog={catalog}
-              visible={page === "playground"}
-              openModels={() => setPage("models")}
+              openProviders={() => setPage("providers")}
               run={run}
               onError={onError}
               notify={notify}
@@ -724,13 +715,10 @@ export default function App() {
               serverErrors={serverErrors}
             />
           </section>
-          <section hidden={page !== "models"}>
-            <Models
-              catalog={catalog}
-              refresh={refreshCatalog}
+          <section hidden={page !== "providers"}>
+            <Providers
               configured={workspace.providers}
-              onProvider={saveProvider}
-              notify={notify}
+              onSave={saveProvider}
               onError={onError}
             />
           </section>
@@ -1151,8 +1139,8 @@ export default function App() {
                 check the response, so you notice when a change breaks a tool.
               </p>
               <p>
-                <strong>4. Try it with AI.</strong> Download a model in Models
-                (free, runs on this Mac) or add an API key, enable tools in the
+                <strong>4. Try it with AI.</strong> Add an API key or a local
+                Ollama server in Providers, enable tools in the
                 Playground, and approve each tool call the model makes.
               </p>
               <p className="hint">

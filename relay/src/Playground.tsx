@@ -17,10 +17,11 @@ import {
 } from "lucide-react";
 import Markdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { listen } from "@tauri-apps/api/event";
 import { api } from "./api";
 import {
+  AI_NOTE,
   providers,
-  type Catalog,
   type Server,
   type Provider,
   type Connection,
@@ -38,12 +39,15 @@ import {
 } from "./types";
 import { ToolResultView } from "./Inspector";
 import { CopyButton, SpeakButton } from "./CopyButton";
-import { Sheet, SheetBody, SheetContent, SheetFooter, SheetHeader } from "./Sheet";
+import {
+  Sheet,
+  SheetBody,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+} from "./Sheet";
 import { JavaScriptEditor } from "./JavaScriptEditor";
-const RELAY_SEARCH = "relay_search_tools";
-const RELAY_SCHEMA = "relay_get_tool_schema";
 const RELAY_EXECUTE_JS = "relay_execute_javascript";
-const PROGRESSIVE_AFTER = 10;
 const SIGN_IN_REQUIRED = "SIGN_IN_REQUIRED";
 const SANDBOX_DEFAULT =
   "// callTool(name, args) returns the tool's output and throws on failure.\n// Each call is approved in Relay. `return` the value you want to see.\nreturn { ok: true };";
@@ -56,15 +60,6 @@ const markdownParts: Components = {
   ),
   img: ({ alt }) => <>{alt}</>,
 };
-// Local reasoning models emit "<think>…</think>" (Qwen's template often pre-opens the tag, leaving only "</think>").
-function splitThinking(text: string): { thinking: string; answer: string } {
-  const end = text.lastIndexOf("</think>");
-  if (end === -1) return { thinking: "", answer: text };
-  return {
-    thinking: text.slice(0, end).replace(/^\s*<think>/, "").trim(),
-    answer: text.slice(end + "</think>".length).trim(),
-  };
-}
 type BoundTool = {
   name: string;
   description: string;
@@ -99,14 +94,22 @@ type JsonSchema = {
 };
 
 /** JSON Schema → a TypeScript type string, so the model sees the exact shape of args and results. */
-function tsType(s: JsonSchema | undefined, defs: Record<string, JsonSchema>, depth = 0): string {
+function tsType(
+  s: JsonSchema | undefined,
+  defs: Record<string, JsonSchema>,
+  depth = 0,
+): string {
   if (!s || depth > 5) return "any";
-  if (s.$ref) return tsType(defs[s.$ref.split("/").pop() ?? ""], defs, depth + 1);
+  if (s.$ref)
+    return tsType(defs[s.$ref.split("/").pop() ?? ""], defs, depth + 1);
   if (s.const !== undefined) return JSON.stringify(s.const);
   if (s.enum) return s.enum.map((v) => JSON.stringify(v)).join(" | ");
   const union = s.anyOf ?? s.oneOf;
   if (union) return union.map((u) => tsType(u, defs, depth + 1)).join(" | ");
-  if (Array.isArray(s.type)) return s.type.map((t) => tsType({ ...s, type: t }, defs, depth)).join(" | ");
+  if (Array.isArray(s.type))
+    return s.type
+      .map((t) => tsType({ ...s, type: t }, defs, depth))
+      .join(" | ");
   switch (s.type) {
     case "integer":
     case "number":
@@ -117,13 +120,16 @@ function tsType(s: JsonSchema | undefined, defs: Record<string, JsonSchema>, dep
       return s.type;
     case "array": {
       const item = tsType(s.items, defs, depth + 1);
-      return item.includes(" ") && !item.startsWith("{") ? `(${item})[]` : `${item}[]`;
+      return item.includes(" ") && !item.startsWith("{")
+        ? `(${item})[]`
+        : `${item}[]`;
     }
   }
   if (s.properties) {
     const required = new Set(s.required ?? []);
     const fields = Object.entries(s.properties).map(
-      ([k, v]) => `${k}${required.has(k) ? "" : "?"}: ${tsType(v, defs, depth + 1)}`,
+      ([k, v]) =>
+        `${k}${required.has(k) ? "" : "?"}: ${tsType(v, defs, depth + 1)}`,
     );
     return `{ ${fields.join("; ")} }`;
   }
@@ -134,7 +140,9 @@ function tsType(s: JsonSchema | undefined, defs: Record<string, JsonSchema>, dep
 
 const scriptTools = (c: { arguments?: unknown }) => {
   const tools = (c.arguments as { tools?: unknown } | undefined)?.tools;
-  return Array.isArray(tools) ? tools.filter((t): t is string => typeof t === "string") : [];
+  return Array.isArray(tools)
+    ? tools.filter((t): t is string => typeof t === "string")
+    : [];
 };
 
 /** `name(args: {...}): {...}` with the tool's own input and output schemas. */
@@ -187,26 +195,6 @@ function approvalView(
   connTool: Tool | undefined,
 ): ApprovalView {
   const args = c.arguments as Record<string, unknown> | undefined;
-  if (c.name === RELAY_SEARCH) {
-    const query = String(args?.query ?? "").trim();
-    return {
-      displayName: "relay_search_tools",
-      summary: "Find MCP tools by keyword before the model calls one.",
-      argLine: query ? `Search for “${query}”` : undefined,
-      showArgs: false,
-      relayMeta: true,
-    };
-  }
-  if (c.name === RELAY_SCHEMA) {
-    const name = String(args?.name ?? "").trim();
-    return {
-      displayName: "relay_get_tool_schema",
-      summary: "Load the JSON schema for a tool the model plans to call.",
-      argLine: name ? `Tool: ${name}` : undefined,
-      showArgs: false,
-      relayMeta: true,
-    };
-  }
   if (c.name === RELAY_EXECUTE_JS) {
     return {
       displayName: "relay_execute_javascript",
@@ -220,8 +208,7 @@ function approvalView(
     (connTool?.description || t?.description || "").trim() ||
     "Runs on the connected MCP server with the arguments below.";
   const emptyArgs =
-    !args ||
-    (typeof args === "object" && Object.keys(args).length === 0);
+    !args || (typeof args === "object" && Object.keys(args).length === 0);
   return {
     displayName,
     summary,
@@ -278,7 +265,9 @@ function ToolResultMessage({
         <span className="mcp-call-name">{toolName}</span>
         {server && <span className="mcp-call-server">{server}</span>}
         {(declined || errored) && (
-          <span className="mcp-call-status">{declined ? "Denied" : "Error"}</span>
+          <span className="mcp-call-status">
+            {declined ? "Denied" : "Error"}
+          </span>
         )}
         <ChevronDown size={14} className="mcp-call-chevron" aria-hidden />
       </summary>
@@ -330,8 +319,6 @@ function ToolResultMessage({
 function approvalModalTitle(calls: Call[]): string {
   if (calls.length !== 1) return `Allow ${calls.length} tool calls?`;
   const only = calls[0];
-  if (only.name === RELAY_SEARCH) return "Search MCP tools?";
-  if (only.name === RELAY_SCHEMA) return "Load tool schema?";
   if (only.name === RELAY_EXECUTE_JS) return "Run sandbox code?";
   return "Allow tool call?";
 }
@@ -340,9 +327,7 @@ export default function Playground({
   servers,
   connections,
   configured,
-  catalog,
-  visible,
-  openModels,
+  openProviders,
   run,
   onError,
   notify,
@@ -355,9 +340,7 @@ export default function Playground({
   servers: Server[];
   connections: Record<string, Connection>;
   configured: Provider[];
-  catalog: Catalog | null;
-  visible: boolean;
-  openModels: () => void;
+  openProviders: () => void;
   run: (id: string, name: string, args: unknown) => Promise<Trace>;
   onError: (e: unknown) => void;
   notify: (text: string, error?: boolean) => void;
@@ -367,8 +350,8 @@ export default function Playground({
   signingIn: string[];
   serverErrors: Record<string, string>;
 }) {
-  const [providerId, setProviderId] = useState("local"),
-    [loading, setLoading] = useState(""),
+  const [providerId, setProviderId] = useState(""),
+    [live, setLive] = useState(""),
     [input, setInput] = useState(""),
     [off, setOff] = useState<string[]>([]),
     [messages, setMessages] = useState<ChatMessage[]>([]),
@@ -396,16 +379,11 @@ export default function Playground({
   const history = useRef<unknown[]>([]),
     bound = useRef<BoundTool[]>([]),
     fullCatalog = useRef<BoundTool[]>([]),
-    progressive = useRef(false),
     alwaysAllowed = useRef(new Set<string>()),
     request = useRef(""),
     end = useRef<HTMLDivElement>(null);
-  /** Bound tool by model-facing name; in progressive mode, any catalog tool the model discovered. */
   const findBound = (name: string) =>
-    bound.current.find((x) => x.name === name) ??
-    (progressive.current
-      ? fullCatalog.current.find((x) => x.name === name)
-      : undefined);
+    bound.current.find((x) => x.name === name);
   const connectedCount = Object.keys(connections).length;
   const connectedServers = servers.filter((s) => connections[s.id]);
   const serverTools =
@@ -426,30 +404,35 @@ export default function Playground({
   const sandboxTools = connections[sandboxServer]?.tools ?? [];
   const sandboxToolMeta = sandboxTools.find((t) => t.name === sandboxTool);
   const runSandbox = async () => {
-                    setBusy(true);
-                    setSandboxResult(null);
-                    const t0 = performance.now();
-                    try {
-                      const value = await api("run_sandbox_code", {
-                        serverId: sandboxServer,
-                        toolName: sandboxTool,
-                        code: sandboxCode,
-                      });
-                      setSandboxResult({
-                        ok: true,
-                        value,
-                        ms: performance.now() - t0,
-                      });
-                      add({ role: "tool", text: "Sandbox run", detail: value, server: "Relay sandbox" });
-                    } catch (e) {
-                      setSandboxResult({
-                        ok: false,
-                        value: String(e),
-                        ms: performance.now() - t0,
-                      });
-                    } finally {
-                      setBusy(false);
-                    }
+    setBusy(true);
+    setSandboxResult(null);
+    const t0 = performance.now();
+    try {
+      const value = await api("run_sandbox_code", {
+        serverId: sandboxServer,
+        toolName: sandboxTool,
+        code: sandboxCode,
+      });
+      setSandboxResult({
+        ok: true,
+        value,
+        ms: performance.now() - t0,
+      });
+      add({
+        role: "tool",
+        text: "Sandbox run",
+        detail: value,
+        server: "Relay sandbox",
+      });
+    } catch (e) {
+      setSandboxResult({
+        ok: false,
+        value: String(e),
+        ms: performance.now() - t0,
+      });
+    } finally {
+      setBusy(false);
+    }
   };
   const openSandbox = (code?: string) => {
     if (code) setSandboxCode(code);
@@ -467,28 +450,22 @@ export default function Playground({
     setSandboxResult(null);
     setSandboxOpen(true);
   };
-  // Every model that's ready to use: the one picked on this Mac, and each saved API key.
-  const choices = configured
-    .map((p) => {
-      if (p.id !== "local")
-        return {
-          id: p.id,
-          label: `${providers.find((x) => x.id === p.id)?.name} · ${p.model}`,
-        };
-      const m = catalog?.models.find((m) => m.id === p.model && m.installed);
-      return m && { id: p.id, label: `${m.name} · on this Mac` };
-    })
-    .filter((c) => !!c);
+  const choices = configured.map((p) => ({
+    id: p.id,
+    label: `${providers.find((x) => x.id === p.id)?.name} · ${p.model}`,
+  }));
   const locked = messages.length > 0,
-    provider = choices.find((c) => c.id === providerId),
-    local = providerId === "local",
-    localModel = configured.find((p) => p.id === "local")?.model ?? "";
+    provider = choices.find((c) => c.id === providerId);
   const pendingHasDestructive = pending.some((c) => {
     // A script is as risky as the tools it may call; read-only tools don't need the warning.
     if (c.name === RELAY_EXECUTE_JS)
       return scriptTools(c).some((name) => {
-        const ct = connections[playgroundServerId]?.tools.find((x) => x.name === name);
-        return !ct || toolIsDestructive(ct) || !toolAnnotations(ct)?.readOnlyHint;
+        const ct = connections[playgroundServerId]?.tools.find(
+          (x) => x.name === name,
+        );
+        return (
+          !ct || toolIsDestructive(ct) || !toolAnnotations(ct)?.readOnlyHint
+        );
       });
     const t = findBound(c.name);
     const ct = connections[t?.serverId ?? ""]?.tools.find(
@@ -527,22 +504,18 @@ export default function Playground({
     if (locked) return;
     setOff([]);
   }, [playgroundServerId, locked]);
-  // Follow whichever model is actually set up, preferring the one on this Mac.
+
   useEffect(() => {
     if (!locked && !provider && choices.length) setProviderId(choices[0].id);
   }, [choices, provider, locked]);
-  // Load the local model when the Playground opens, so the first reply doesn't wait for it.
   useEffect(() => {
-    if (!visible || !local || !provider || !localModel) return;
-    let cancelled = false;
-    setLoading(localModel);
-    api("warm_model", { id: localModel })
-      .catch((e) => !cancelled && onError(e))
-      .finally(() => !cancelled && setLoading(""));
+    const unlisten = listen<string>("ai-delta", (e) =>
+      setLive((text) => text + e.payload),
+    );
     return () => {
-      cancelled = true;
+      void unlisten.then((off) => off());
     };
-  }, [visible, local, !!provider, localModel, onError]);
+  }, []);
   const add = (m: ChatMessage) => {
     setMessages((v) => [...v, m]);
     setTimeout(
@@ -556,6 +529,7 @@ export default function Playground({
     const id = crypto.randomUUID();
     request.current = id;
     setBusy(true);
+    setLive("");
     setRetry(null);
     try {
       const mcpInstructions =
@@ -586,25 +560,19 @@ export default function Playground({
       const auto =
         roundRef.current < 12 &&
         (allowedAlways ||
-        (autoApproveReadOnly &&
-        r.calls.length > 0 &&
-        r.calls.every((c) => {
-          if (
-            c.name === RELAY_SEARCH ||
-            c.name === RELAY_SCHEMA ||
-            c.name === RELAY_EXECUTE_JS
-          )
-            return false;
-          const t = findBound(c.name);
-          if (!t?.serverId) return false;
-          const ct = connections[t.serverId]?.tools.find(
-            (x) => x.name === t.toolName,
-          );
-          return (
-            !!toolAnnotations(ct)?.readOnlyHint &&
-            !toolIsDestructive(ct)
-          );
-        })));
+          (autoApproveReadOnly &&
+            r.calls.length > 0 &&
+            r.calls.every((c) => {
+              if (c.name === RELAY_EXECUTE_JS) return false;
+              const t = findBound(c.name);
+              if (!t?.serverId) return false;
+              const ct = connections[t.serverId]?.tools.find(
+                (x) => x.name === t.toolName,
+              );
+              return (
+                !!toolAnnotations(ct)?.readOnlyHint && !toolIsDestructive(ct)
+              );
+            })));
       // Pass the calls explicitly: `pending` in approve's closure is still the old (empty) state.
       if (auto) queueMicrotask(() => void approve(true, r.calls));
       if (r.text) add({ role: "assistant", text: r.text });
@@ -619,6 +587,7 @@ export default function Playground({
       add({ role: "error", text: String(e) });
     } finally {
       setBusy(false);
+      setLive("");
       request.current = "";
     }
   };
@@ -646,47 +615,9 @@ export default function Playground({
             description: t.description || t.toolName,
           };
         });
-      if (
-        providerId !== "local" &&
-        fullCatalog.current.length > PROGRESSIVE_AFTER
-      ) {
-        progressive.current = true;
-        bound.current = [
-          {
-            name: RELAY_SEARCH,
-            description:
-              "Search connected MCP tools by keyword before calling them.",
-            parameters: {
-              type: "object",
-              properties: { query: { type: "string" } },
-              required: ["query"],
-            },
-            serverId: "",
-            toolName: "",
-            serverName: "Relay",
-          },
-          {
-            name: RELAY_SCHEMA,
-            description:
-              "Load the JSON Schema for a tool name returned by relay_search_tools. After loading, that tool becomes callable.",
-            parameters: {
-              type: "object",
-              properties: { name: { type: "string" } },
-              required: ["name"],
-            },
-            serverId: "",
-            toolName: "",
-            serverName: "Relay",
-          },
-        ];
-      } else {
-        progressive.current = false;
-        bound.current = fullCatalog.current;
-      }
-      if (codeMode) bound.current = [
-          ...bound.current,
-          relayJsTool(fullCatalog.current),
-        ];
+      bound.current = fullCatalog.current;
+      if (codeMode)
+        bound.current = [...bound.current, relayJsTool(fullCatalog.current)];
     }
     add({ role: "user", text });
     await step(text);
@@ -700,34 +631,13 @@ export default function Playground({
       const t = findBound(c.name);
       let value: unknown;
       if (!allow) value = { error: "The user declined this tool call." };
-      else if (progressive.current && c.name === RELAY_SEARCH) {
-        const q = String(
-          (c.arguments as { query?: string })?.query ?? "",
-        ).toLowerCase();
-        value = fullCatalog.current
-          .filter(
-            (t) =>
-              !q ||
-              t.name.toLowerCase().includes(q) ||
-              t.toolName.toLowerCase().includes(q) ||
-              t.description.toLowerCase().includes(q),
-          )
-          .slice(0, 25)
-          .map((t) => ({
-            name: t.name,
-            server: t.serverName,
-            tool: t.toolName,
-            description: t.description,
-          }));
-      } else if (c.name === RELAY_EXECUTE_JS) {
+      else if (c.name === RELAY_EXECUTE_JS) {
         const args = c.arguments as { code?: string; tools?: string[] };
         // Only tools enabled for this session, the same list the model was told about.
         const known = fullCatalog.current.map((t) => t.toolName);
         const tools = (args.tools ?? []).filter((n) => known.includes(n));
-        if (!allow)
-          value = { error: "The user declined this tool call." };
-        else if (!args.code)
-          value = { error: "code is required." };
+        if (!allow) value = { error: "The user declined this tool call." };
+        else if (!args.code) value = { error: "code is required." };
         else if (!tools.length)
           value = {
             error: `Pass \`tools\` with at least one of: ${known.join(", ")}.`,
@@ -743,20 +653,6 @@ export default function Playground({
           } catch (e) {
             value = { error: String(e) };
           }
-      } else if (progressive.current && c.name === RELAY_SCHEMA) {
-        const want = String((c.arguments as { name?: string })?.name ?? "");
-        const hit = fullCatalog.current.find((t) => t.name === want);
-        // Expose the loaded tool to the model on the next turn so it can call it.
-        if (hit && !bound.current.some((t) => t.name === hit.name))
-          bound.current = [...bound.current, hit];
-        value = hit
-          ? {
-              name: hit.name,
-              server: hit.serverName,
-              tool: hit.toolName,
-              parameters: hit.parameters,
-            }
-          : { error: `Unknown tool name "${want}".` };
       } else if (!t)
         value = { error: "The model requested a tool that was not enabled." };
       else {
@@ -772,7 +668,8 @@ export default function Playground({
         text: `${allow ? "Executed" : "Declined"} ${t?.toolName ?? c.name}`,
         detail: value,
         args: c.arguments,
-        server: t?.serverName || (c.name.startsWith("relay_") ? "Relay" : undefined),
+        server:
+          t?.serverName || (c.name.startsWith("relay_") ? "Relay" : undefined),
       });
       outputs.push({ id: c.id, content: toolResultTextForModel(value) });
     }
@@ -807,14 +704,9 @@ export default function Playground({
               ))}
             </select>
           ) : (
-            <button className="text-button" onClick={openModels}>
-              Set up a model
+            <button className="text-button" onClick={openProviders}>
+              Set up a provider
             </button>
-          )}
-          {local && loading && (
-            <span className="model-label">
-              <LoaderCircle size={13} className="spin" /> Loading model…
-            </span>
           )}
         </div>
         {connections[playgroundServerId] && (
@@ -863,11 +755,11 @@ export default function Playground({
                 ) : (
                   <>
                     <p>
-                      First pick a model: download one to run free on this Mac,
-                      or add an API key.
+                      First pick a provider: add an API key or connect a local
+                      Ollama server.
                     </p>
-                    <button className="button primary" onClick={openModels}>
-                      Set up a model
+                    <button className="button primary" onClick={openProviders}>
+                      Set up a provider
                     </button>
                   </>
                 )}
@@ -886,39 +778,24 @@ export default function Playground({
                   )}
                   {m.role === "assistant" ? (
                     <>
-                      {(() => {
-                        const { thinking, answer } = splitThinking(m.text);
-                        return (
-                          <>
-                            {thinking && (
-                              <details className="pg-thinking">
-                                <summary>Thinking</summary>
-                                <p>{thinking}</p>
-                              </details>
-                            )}
-                            {answer && (
-                              <div className="markdown">
-                                <Markdown
-                                  remarkPlugins={[remarkGfm]}
-                                  components={markdownParts}
-                                >
-                                  {answer}
-                                </Markdown>
-                              </div>
-                            )}
-                            {answer && (
-                              <div className="message-actions">
-                                <CopyButton text={answer} notify={notify} />
-                                <SpeakButton text={answer} />
-                              </div>
-                            )}
-                          </>
-                        );
-                      })()}
-                      {extractJavaScriptBlocks(splitThinking(m.text).answer).map((block, bi) => (
+                      <div className="markdown">
+                        <Markdown
+                          remarkPlugins={[remarkGfm]}
+                          components={markdownParts}
+                        >
+                          {m.text}
+                        </Markdown>
+                      </div>
+                      <div className="message-actions">
+                        <CopyButton text={m.text} notify={notify} />
+                        <SpeakButton text={m.text} />
+                      </div>
+                      {extractJavaScriptBlocks(m.text).map((block, bi) => (
                         <div className="js-block-offer" key={bi}>
                           <p className="hint">JavaScript from the model</p>
-                          <pre className="result-code">{block.slice(0, 800)}</pre>
+                          <pre className="result-code">
+                            {block.slice(0, 800)}
+                          </pre>
                           <button
                             type="button"
                             className="button small"
@@ -963,26 +840,29 @@ export default function Playground({
                           ) : (
                             <>
                               Allow the model to use{" "}
-                              <code>{pendingViews[0].view.displayName}</code> from{" "}
-                              <strong>{approvalServer}</strong>?
+                              <code>{pendingViews[0].view.displayName}</code>{" "}
+                              from <strong>{approvalServer}</strong>?
                             </>
                           )
                         ) : (
                           <>
-                            Allow the model to use {pendingViews.length} tools from{" "}
-                            <strong>{approvalServer}</strong>?
+                            Allow the model to use {pendingViews.length} tools
+                            from <strong>{approvalServer}</strong>?
                           </>
                         )}
                       </h2>
-                      {pendingViews.length === 1 && pendingViews[0].view.argLine && (
-                        <p>{pendingViews[0].view.argLine}</p>
-                      )}
+                      {pendingViews.length === 1 &&
+                        pendingViews[0].view.argLine && (
+                          <p>{pendingViews[0].view.argLine}</p>
+                        )}
                     </div>
                   </div>
                   <div className="tool-approval-calls">
                     {pendingViews.map(({ c, view, connTool }) => {
                       if (c.name === RELAY_EXECUTE_JS) {
-                        const code = (c.arguments as { code?: unknown } | undefined)?.code;
+                        const code = (
+                          c.arguments as { code?: unknown } | undefined
+                        )?.code;
                         return (
                           <div className="tool-approval-script" key={c.id}>
                             <div className="tool-approval-script-head">
@@ -993,9 +873,13 @@ export default function Playground({
                               ))}
                             </div>
                             <pre className="tool-approval-args">
-                              {typeof code === "string" ? code : pretty(c.arguments)}
+                              {typeof code === "string"
+                                ? code
+                                : pretty(c.arguments)}
                             </pre>
-                            <p className="hint">Each tool call the script makes asks again.</p>
+                            <p className="hint">
+                              Each tool call the script makes asks again.
+                            </p>
                           </div>
                         );
                       }
@@ -1005,15 +889,17 @@ export default function Playground({
                         !!c.arguments &&
                         Object.keys(c.arguments as object).length > 0;
                       return (
-                        <details
-                          className="tool-approval-call"
-                          key={c.id}
-                        >
+                        <details className="tool-approval-call" key={c.id}>
                           <summary className={hasArgs ? undefined : "no-args"}>
-                            <ChevronDown size={14} className="tool-approval-chevron" />
+                            <ChevronDown
+                              size={14}
+                              className="tool-approval-chevron"
+                            />
                             <code>{view.displayName}</code>
                             {destructive && (
-                              <span className="badge destructive">Destructive</span>
+                              <span className="badge destructive">
+                                Destructive
+                              </span>
                             )}
                             <span className="tool-approval-args-hint">
                               {hasArgs ? "Arguments" : "No arguments"}
@@ -1060,7 +946,9 @@ export default function Playground({
                         disabled={busy || round >= 12}
                         title="Don’t ask again for these tools in this session"
                         onClick={() => {
-                          pending.forEach((c) => alwaysAllowed.current.add(c.name));
+                          pending.forEach((c) =>
+                            alwaysAllowed.current.add(c.name),
+                          );
                           void approve(true);
                         }}
                       >
@@ -1077,19 +965,31 @@ export default function Playground({
                       }
                       onClick={() => approve(true)}
                     >
-                      {pending.length === 1 && pending[0].name === RELAY_SEARCH
-                        ? "Search"
-                        : "Allow once"}
+                      Allow once
                     </button>
                   </footer>
                 </section>
               </div>
             )}
             {busy && (
-              <div className="thinking">
-                <span className="pulse" />{" "}
-                {local && loading ? "Loading the model…" : "Thinking…"}
-              </div>
+              <>
+                {live && (
+                  <article className="chat-message assistant">
+                    <span className="message-role">Model</span>
+                    <div className="markdown">
+                      <Markdown
+                        remarkPlugins={[remarkGfm]}
+                        components={markdownParts}
+                      >
+                        {live}
+                      </Markdown>
+                    </div>
+                  </article>
+                )}
+                <div className="thinking">
+                  <span className="pulse" /> Thinking…
+                </div>
+              </>
             )}
             {retry && !busy && (
               <div className="retry">
@@ -1114,7 +1014,7 @@ export default function Playground({
                 placeholder={
                   provider
                     ? "Give your tools something to work on…"
-                    : "Download a model or add an API key in Models to start…"
+                    : "Set up a provider in Providers to start…"
                 }
                 value={input}
                 disabled={busy || !!pending.length || !!retry || round >= 12}
@@ -1157,11 +1057,7 @@ export default function Playground({
               )}
             </div>
             <div className="composer-caption">
-              <span>
-                {local
-                  ? "Runs on this Mac · nothing is sent to an AI service"
-                  : "Your messages and tool results are sent to your provider"}
-              </span>
+              <span>{AI_NOTE}</span>
               <span>↵ Send</span>
             </div>
           </div>
@@ -1183,10 +1079,8 @@ export default function Playground({
                   {servers.map((s) => {
                     const loading = connecting.includes(s.id);
                     const waiting = signingIn.includes(s.id);
-                    const needsSignIn =
-                      serverErrors[s.id] === SIGN_IN_REQUIRED;
-                    const failed =
-                      !!serverErrors[s.id] && !needsSignIn;
+                    const needsSignIn = serverErrors[s.id] === SIGN_IN_REQUIRED;
+                    const failed = !!serverErrors[s.id] && !needsSignIn;
                     return (
                       <li key={s.id}>
                         <span>
@@ -1285,7 +1179,9 @@ export default function Playground({
                           disabled={enabledCount === serverTools.length}
                           onClick={() =>
                             setOff((v) =>
-                              v.filter((k) => !serverTools.some((t) => t.key === k)),
+                              v.filter(
+                                (k) => !serverTools.some((t) => t.key === k),
+                              ),
                             )
                           }
                         >
@@ -1393,174 +1289,172 @@ export default function Playground({
         </aside>
       </div>
       <Sheet open={sandboxOpen} onOpenChange={setSandboxOpen}>
-          <SheetContent
-            width="lg"
-            onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-                e.preventDefault();
-                if (sandboxServer && sandboxTool && !busy) void runSandbox();
-              }
-            }}
-          >
-            <SheetHeader
-              title="JavaScript sandbox"
-              description="QuickJS · no network · you approve each tool call"
-            />
-            <SheetBody>
-              <div className="sandbox-notice">
-                <ShieldCheck size={16} />
-                <span>
-                  The script can call only the tool selected below with{" "}
-                  <code>callTool</code>. Every call still asks for your
-                  approval.
+        <SheetContent
+          width="lg"
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              e.preventDefault();
+              if (sandboxServer && sandboxTool && !busy) void runSandbox();
+            }
+          }}
+        >
+          <SheetHeader
+            title="JavaScript sandbox"
+            description="QuickJS · no network · you approve each tool call"
+          />
+          <SheetBody>
+            <div className="sandbox-notice">
+              <ShieldCheck size={16} />
+              <span>
+                The script can call only the tool selected below with{" "}
+                <code>callTool</code>. Every call still asks for your approval.
+              </span>
+            </div>
+            <div className="sandbox-config">
+              <label>
+                <span className="sandbox-label">MCP server</span>
+                <select
+                  aria-label="Sandbox server"
+                  value={sandboxServer}
+                  onChange={(e) => {
+                    setSandboxServer(e.target.value);
+                    setSandboxTool("");
+                  }}
+                >
+                  <option value="">Choose server…</option>
+                  {Object.keys(connections).map((id) => (
+                    <option key={id} value={id}>
+                      {servers.find((s) => s.id === id)?.name ?? id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span className="sandbox-label">Allowed tool</span>
+                <select
+                  aria-label="Sandbox tool"
+                  value={sandboxTool}
+                  disabled={!sandboxServer}
+                  onChange={(e) => setSandboxTool(e.target.value)}
+                >
+                  <option value="">Choose tool…</option>
+                  {sandboxTools.map((t) => (
+                    <option key={t.name} value={t.name}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            {sandboxToolMeta && (
+              <div className="sandbox-tool-info">
+                <span
+                  className={`sandbox-badge${
+                    toolAnnotations(sandboxToolMeta)?.readOnlyHint
+                      ? " read"
+                      : " write"
+                  }`}
+                >
+                  {toolAnnotations(sandboxToolMeta)?.readOnlyHint
+                    ? "Read-only"
+                    : "Can change data"}
                 </span>
+                {sandboxToolMeta.description && (
+                  <p className="sandbox-tool-desc">
+                    {sandboxToolMeta.description}
+                  </p>
+                )}
               </div>
-              <div className="sandbox-config">
-                <label>
-                  <span className="sandbox-label">MCP server</span>
-                  <select
-                    aria-label="Sandbox server"
-                    value={sandboxServer}
-                    onChange={(e) => {
-                      setSandboxServer(e.target.value);
-                      setSandboxTool("");
-                    }}
+            )}
+            <div className="sandbox-editor-block">
+              <div className="sandbox-editor-toolbar">
+                <span className="sandbox-editor-label">Script</span>
+                <div className="sandbox-editor-actions">
+                  <button
+                    type="button"
+                    className="button small"
+                    disabled={!sandboxTool}
+                    onClick={() =>
+                      setSandboxCode((c) =>
+                        c.trim()
+                          ? `${c.replace(/\s+$/, "")}\n\nconst result = callTool("${sandboxTool}", {});\nreturn result;\n`
+                          : `const result = callTool("${sandboxTool}", {});\nreturn result;\n`,
+                      )
+                    }
                   >
-                    <option value="">Choose server…</option>
-                    {Object.keys(connections).map((id) => (
-                      <option key={id} value={id}>
-                        {servers.find((s) => s.id === id)?.name ?? id}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  <span className="sandbox-label">Allowed tool</span>
-                  <select
-                    aria-label="Sandbox tool"
-                    value={sandboxTool}
-                    disabled={!sandboxServer}
-                    onChange={(e) => setSandboxTool(e.target.value)}
+                    Insert callTool
+                  </button>
+                  <button
+                    type="button"
+                    className="button small"
+                    onClick={() => setSandboxCode(SANDBOX_DEFAULT)}
                   >
-                    <option value="">Choose tool…</option>
-                    {sandboxTools.map((t) => (
-                      <option key={t.name} value={t.name}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              {sandboxToolMeta && (
-                <div className="sandbox-tool-info">
-                  <span
-                    className={`sandbox-badge${
-                      toolAnnotations(sandboxToolMeta)?.readOnlyHint
-                        ? " read"
-                        : " write"
-                    }`}
-                  >
-                    {toolAnnotations(sandboxToolMeta)?.readOnlyHint
-                      ? "Read-only"
-                      : "Can change data"}
-                  </span>
-                  {sandboxToolMeta.description && (
-                    <p className="sandbox-tool-desc">
-                      {sandboxToolMeta.description}
-                    </p>
-                  )}
+                    Reset template
+                  </button>
                 </div>
-              )}
-              <div className="sandbox-editor-block">
-                <div className="sandbox-editor-toolbar">
-                  <span className="sandbox-editor-label">Script</span>
-                  <div className="sandbox-editor-actions">
-                    <button
-                      type="button"
-                      className="button small"
-                      disabled={!sandboxTool}
-                      onClick={() =>
-                        setSandboxCode((c) =>
-                          c.trim()
-                            ? `${c.replace(/\s+$/, "")}\n\nconst result = callTool("${sandboxTool}", {});\nreturn result;\n`
-                            : `const result = callTool("${sandboxTool}", {});\nreturn result;\n`,
-                        )
+              </div>
+              <JavaScriptEditor
+                value={sandboxCode}
+                onChange={setSandboxCode}
+                toolNames={sandboxTools.map((t) => t.name)}
+                minHeight={220}
+              />
+              <p className="sandbox-editor-hint">
+                Tab · indent · <kbd>⌃</kbd>
+                <kbd>Space</kbd> · autocomplete · <kbd>⌘</kbd>
+                <kbd>↵</kbd> run · 30s run limit
+              </p>
+            </div>
+            {sandboxResult && (
+              <div
+                className={`sandbox-result${sandboxResult.ok ? "" : " error"}`}
+              >
+                <div className="sandbox-result-head">
+                  <span>{sandboxResult.ok ? "Result" : "Error"}</span>
+                  <span className="sandbox-result-meta">
+                    {(sandboxResult.ms / 1000).toFixed(2)}s
+                    <CopyButton
+                      text={
+                        typeof sandboxResult.value === "string"
+                          ? sandboxResult.value
+                          : pretty(sandboxResult.value)
                       }
-                    >
-                      Insert callTool
-                    </button>
-                    <button
-                      type="button"
-                      className="button small"
-                      onClick={() => setSandboxCode(SANDBOX_DEFAULT)}
-                    >
-                      Reset template
-                    </button>
-                  </div>
+                      label="Copy result"
+                      notify={notify}
+                    />
+                  </span>
                 </div>
-                <JavaScriptEditor
-                  value={sandboxCode}
-                  onChange={setSandboxCode}
-                  toolNames={sandboxTools.map((t) => t.name)}
-                  minHeight={220}
-                />
-                <p className="sandbox-editor-hint">
-                  Tab · indent ·{" "}
-                  <kbd>⌃</kbd>
-                  <kbd>Space</kbd> · autocomplete · <kbd>⌘</kbd>
-                  <kbd>↵</kbd> run · 30s run limit
-                </p>
+                <pre className="sandbox-result-body">
+                  {typeof sandboxResult.value === "string"
+                    ? sandboxResult.value
+                    : pretty(sandboxResult.value)}
+                </pre>
               </div>
-              {sandboxResult && (
-                <div
-                  className={`sandbox-result${sandboxResult.ok ? "" : " error"}`}
-                >
-                  <div className="sandbox-result-head">
-                    <span>{sandboxResult.ok ? "Result" : "Error"}</span>
-                    <span className="sandbox-result-meta">
-                      {(sandboxResult.ms / 1000).toFixed(2)}s
-                      <CopyButton
-                        text={
-                          typeof sandboxResult.value === "string"
-                            ? sandboxResult.value
-                            : pretty(sandboxResult.value)
-                        }
-                        label="Copy result"
-                        notify={notify}
-                      />
-                    </span>
-                  </div>
-                  <pre className="sandbox-result-body">
-                    {typeof sandboxResult.value === "string"
-                      ? sandboxResult.value
-                      : pretty(sandboxResult.value)}
-                  </pre>
-                </div>
-              )}
-            </SheetBody>
-            <SheetFooter>
-                <button
-                  type="button"
-                  className="button"
-                  onClick={() => setSandboxOpen(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="button primary"
-                  disabled={!sandboxServer || !sandboxTool || busy}
-                  onClick={runSandbox}
-                >
-                  {busy ? (
-                    <LoaderCircle className="spin" size={15} />
-                  ) : (
-                    <Play size={15} />
-                  )}{" "}
-                  Run sandbox
-                </button>
-            </SheetFooter>
-          </SheetContent>
+            )}
+          </SheetBody>
+          <SheetFooter>
+            <button
+              type="button"
+              className="button"
+              onClick={() => setSandboxOpen(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="button primary"
+              disabled={!sandboxServer || !sandboxTool || busy}
+              onClick={runSandbox}
+            >
+              {busy ? (
+                <LoaderCircle className="spin" size={15} />
+              ) : (
+                <Play size={15} />
+              )}{" "}
+              Run sandbox
+            </button>
+          </SheetFooter>
+        </SheetContent>
       </Sheet>
     </div>
   );

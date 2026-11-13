@@ -3,18 +3,14 @@ mod example;
 pub fn example_server() {
     example::serve();
 }
-pub fn llama_watchdog(pid_file: &str, exe: &str, args: &[String]) -> ! {
-    models::watchdog(pid_file, exe, args)
-}
 mod mcp;
-mod models;
 mod oauth;
 mod relay_client;
 mod sandbox;
 mod store;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tokio::sync::Mutex;
 
 async fn session(sessions: &mcp::Sessions, id: &str) -> Result<mcp::Session, String> {
@@ -392,7 +388,7 @@ async fn save_provider(
     provider: store::Provider,
     key: Option<String>,
 ) -> Result<(), String> {
-    if !["openai", "gemini", "claude", "local"].contains(&provider.id.as_str()) {
+    if !["openai", "gemini", "claude", "ollama", "compatible"].contains(&provider.id.as_str()) {
         return Err("Unknown provider".into());
     }
     if let Some(key) = key {
@@ -410,7 +406,6 @@ async fn save_provider(
 async fn ai_step(
     app: tauri::AppHandle,
     state: tauri::State<'_, Workspace>,
-    runtime: tauri::State<'_, models::Runtime>,
     requests: tauri::State<'_, Requests>,
     request_id: String,
     provider_id: String,
@@ -420,7 +415,7 @@ async fn ai_step(
     tools: Vec<ai::ToolDef>,
     mcp_instructions: Option<String>,
 ) -> Result<ai::Step, String> {
-    let mut p = state
+    let p = state
         .0
         .lock()
         .await
@@ -431,28 +426,17 @@ async fn ai_step(
         .ok_or("Set up this model first.")?;
     let (tx, rx) = tokio::sync::oneshot::channel();
     requests.0.lock().await.insert(request_id.clone(), tx);
-    let operation = async {
-        let local_token = if p.id == "local" {
-            let (url, token) = models::start(&app, &runtime, &p.model).await?;
-            p.base_url = url;
-            Some(token)
-        } else {
-            None
-        };
-        ai::step(
-            p,
-            history,
-            input,
-            results,
-            tools,
-            local_token,
-            mcp_instructions,
-        )
-        .await
-    };
+    let system = ai::playground_system(mcp_instructions.as_deref(), &tools);
+    let operation = ai::step(p, history, input, results, tools, system, |text| {
+        let _ = app.emit("ai-delta", text);
+    });
     let result = tokio::select! { r=operation=>r, _=rx=>Err("Generation cancelled.".into()) };
     requests.0.lock().await.remove(&request_id);
     result
+}
+#[tauri::command]
+async fn list_provider_models(provider: store::Provider) -> Result<Vec<String>, String> {
+    ai::list_models(provider).await
 }
 #[tauri::command]
 async fn cancel_request(requests: tauri::State<'_, Requests>, id: String) -> Result<(), String> {
@@ -541,7 +525,6 @@ pub fn run() {
     tauri::Builder::default()
         .manage(Workspace::default())
         .manage(mcp::Sessions::default())
-        .manage(models::Runtime::default())
         .manage(Requests::default())
         .manage(SignIns::default())
         .invoke_handler(tauri::generate_handler![
@@ -567,32 +550,16 @@ pub fn run() {
             get_prompt,
             save_provider,
             ai_step,
+            list_provider_models,
             cancel_request,
             save_test,
             delete_test,
-            server_log,
-            models::model_catalog,
-            models::warm_model,
-            models::download_model,
-            models::cancel_download,
-            models::stop_model,
-            models::delete_model
+            server_log
         ])
-        .setup(|app| {
-            models::stop_leftover(app.handle());
-            Ok(())
-        })
         .build(tauri::generate_context!())
         .expect("Could not build Relay")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
-                // The watchdog stops the model server once this pipe closes, and also if this
-                // lock is busy now: the pipe closes anyway when the app exits.
-                if let Ok(mut processes) = app.state::<models::Runtime>().process.try_lock() {
-                    if let Some((_, _, child, _)) = processes.as_mut() {
-                        drop(child.stdin.take());
-                    }
-                }
                 if let Ok(connections) = app.state::<mcp::Sessions>().0.try_lock() {
                     for c in connections.values() {
                         c.conn.cancellation_token().cancel();

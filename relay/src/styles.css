@@ -1099,8 +1099,9 @@ details summary {
   padding: 0;
 }
 .markdown blockquote {
-  border-left: 3px solid var(--border);
-  padding-left: 12px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  background: var(--accent-soft);
   color: var(--text-2);
 }
 .markdown table {
@@ -1819,6 +1820,41 @@ details summary {
   color: var(--text-2);
   margin-top: 4px;
 }
+.provider-tabs {
+  height: 40px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.provider-advanced-grid {
+  display: grid;
+  gap: 20px;
+}
+.param-slider {
+  display: grid;
+  gap: 6px;
+}
+.param-slider-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.param-slider-head label {
+  margin: 0;
+  font-weight: 500;
+}
+.param-slider-head output {
+  margin-left: auto;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.param-slider-head .button {
+  padding: 2px 8px;
+}
+.param-slider input[type="range"] {
+  width: 100%;
+  padding: 0;
+  accent-color: var(--accent);
+}
 .provider-actions {
   display: flex;
   justify-content: flex-end;
@@ -2423,12 +2459,8 @@ details summary {
 .sandbox-notice {
   align-items: center;
   padding: 9px 13px;
-  border-left: 3px solid var(--accent);
   border-radius: 8px;
   background: var(--accent-soft);
-  border-top-color: transparent;
-  border-right-color: transparent;
-  border-bottom-color: transparent;
 }
 .sandbox-config select {
   height: 38px;
@@ -2596,4 +2628,15 @@ details summary {
 }
 .tool-approval-script .hint {
   margin: 0;
+}
+.provider-model {
+  display: flex;
+  gap: 8px;
+}
+.provider-model select,
+.provider-model input {
+  flex: 1;
+}
+.hint.error {
+  color: var(--danger, #b42318);
 }

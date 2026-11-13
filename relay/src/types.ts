@@ -90,6 +90,10 @@ export interface Provider {
   id: string;
   model: string;
   baseUrl: string;
+  temperature?: number | null;
+  topP?: number | null;
+  maxTokens?: number | null;
+  numCtx?: number | null;
 }
 export interface TestCase {
   id: string;
@@ -123,31 +127,20 @@ export interface Step {
   text: string;
   calls: Call[];
   history: unknown[];
-  usage: unknown;
 }
 export interface ToolOutput {
   id: string;
   content: string;
 }
+export const AI_NOTE =
+  "AI can make mistakes. Check its answers and edits before you rely on them.";
 export const providers = [
-  { id: "claude", name: "Claude", detail: "Anthropic" },
-  { id: "openai", name: "OpenAI", detail: "GPT models" },
-  { id: "gemini", name: "Gemini", detail: "Google" },
+  { id: "claude", name: "Claude", detail: "Anthropic", needsKey: true, editsUrl: false, defaultUrl: "", modelHint: "claude-sonnet-5-5" },
+  { id: "openai", name: "OpenAI", detail: "GPT models", needsKey: true, editsUrl: false, defaultUrl: "", modelHint: "gpt-5" },
+  { id: "gemini", name: "Gemini", detail: "Google", needsKey: true, editsUrl: false, defaultUrl: "", modelHint: "gemini-2.5-pro" },
+  { id: "ollama", name: "Ollama", detail: "Local server, no key", needsKey: false, editsUrl: true, defaultUrl: "http://localhost:11434", modelHint: "llama3.1" },
+  { id: "compatible", name: "OpenAI-compatible", detail: "Any compatible endpoint", needsKey: false, editsUrl: true, defaultUrl: "", modelHint: "model id" },
 ];
-export interface LocalModel {
-  id: string;
-  name: string;
-  note: string;
-  sizeMb: number;
-  minRamGb: number;
-  repo: string;
-  installed: boolean;
-}
-export interface Catalog {
-  ramGb: number;
-  recommended: string;
-  models: LocalModel[];
-}
 export const emptyServer = (): Server => ({
   id: "",
   name: "",

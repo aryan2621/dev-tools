@@ -3,7 +3,7 @@
 [← Back to README](../README.md) · [Developer guide](dev.md)
 
 - [Install](#install) · [Servers](#servers) · [Inspector](#inspector) · [Playground](#playground)
-- [Models](#models) · [Tests](#tests) · [Activity](#activity) · [Your data](#your-data) · [Troubleshooting](#troubleshooting)
+- [Providers](#providers) · [Tests](#tests) · [Activity](#activity) · [Your data](#your-data) · [Troubleshooting](#troubleshooting)
 
 ## Install
 
@@ -12,8 +12,7 @@
 2. Open it, drag **Relay** into **Applications**, and open Relay.
 
 **Windows** (10 or later): run [`Relay_0.1.0_x64-setup.exe`](https://github.com/aryan2621/dev-tools/releases/latest/download/Relay_0.1.0_x64-setup.exe).
-Secrets go to the Windows Credential Manager instead of the Keychain, and on-device models aren't
-available yet: use an API key provider in the Playground.
+Secrets go to the Windows Credential Manager instead of the Keychain.
 
 **"Apple could not verify Relay is free of malware":** Relay isn't signed with a paid Apple
 Developer certificate, so macOS warns you the first time. Click **Done**, open **System Settings →
@@ -63,26 +62,19 @@ ones are sent), and give it a task.
 - Every tool call **waits for your approval**: you see the tool and its arguments, then **Approve & run**
   or **Decline**. Declined calls are reported back to the model. A task stops after 12 rounds of tool calls.
 - Tool results, the model's replies and token usage appear step by step.
-- Models:
-  - **On this Mac:** downloaded from the **Models** page; free, private, no account.
-  - **With an API key:** **Claude** (Anthropic), **OpenAI** (GPT models) or **Gemini** (Google).
-    Keys are stored in the Keychain. Requests go straight from your Mac to that provider.
+- Providers are set up on the **Providers** page.
 
-## Models
+## Providers
 
-Models that run on your Mac with the built-in llama.cpp (4-bit, native tool calling). Relay
-recommends the strongest one your Mac's memory runs comfortably.
+Pick a provider, enter its details and press **Load models** to choose from the live list.
 
-| Model | Download | Memory | Good for |
-|---|---|---|---|
-| Qwen3.5 4B | 2.7 GB | 8 GB | Small and quick; simple, single tool calls |
-| Qwen3.5 9B | 5.7 GB | 16 GB | The best balance of speed and accuracy for multi-step tool use |
-| Gemma 4 12B | 6.7 GB | 16 GB | Checking your tools work beyond one model family |
-| Gemma 4 26B A4B | 14.3 GB | 32 GB | Large but fast |
-| Qwen3.8 27B | 16.5 GB | 32 GB | The most capable, close to cloud models at tool use; slower |
+- **Claude**, **OpenAI**, **Gemini:** an API key, stored in the system keychain. Requests go
+  straight from your computer to that provider.
+- **Ollama:** the server URL (default `http://localhost:11434`), no key. Models come from the
+  running server.
+- **OpenAI-compatible:** a base URL and an optional key.
 
-Downloads come from Hugging Face and can be cancelled. The model stops when Relay quits, even
-after a crash or force quit.
+AI can make mistakes. Check its answers and edits before you rely on them.
 
 ## Tests
 
@@ -99,7 +91,6 @@ time. Open one to see its arguments and response.
 ## Your data
 
 - Servers, providers and tests: `~/Library/Application Support/com.relay.mcp-workbench/workspace.json`
-- Downloaded models: the `models/` folder next to it
 - Header values, environment variables, API keys and sign-in tokens: the macOS Keychain
   (service `com.relay.mcp-workbench`)
 
@@ -111,4 +102,4 @@ Hugging Face for model downloads.
 - **A stdio server won't connect:** open the Inspector's **log** tab to see its error. Check the command
   runs in Terminal.
 - **macOS asks for Keychain access:** click **Always Allow** so it doesn't ask on every request.
-- **A local model is slow:** pick a smaller one on **Models**, or close other large apps.
+- **Ollama is not running:** start it, then press **Load models** on **Providers** again.
