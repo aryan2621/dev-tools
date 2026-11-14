@@ -12,11 +12,8 @@
     "build": "tauri build --bundles app"
   },
   "dependencies": {
-    "@codemirror/autocomplete": "6.20.4",
-    "@codemirror/commands": "6.11.1",
     "@codemirror/lang-json": "6.0.2",
     "@codemirror/lang-sql": "6.10.0",
-    "@codemirror/language": "6.13.1",
     "@codemirror/state": "6.7.6",
     "@codemirror/view": "6.43.15",
     "@fontsource-variable/ibm-plex-sans": "5.3.0",
@@ -33,7 +30,6 @@
     "@radix-ui/react-select": "2.4.1",
     "@radix-ui/react-slot": "1.5.0",
     "@radix-ui/react-tabs": "1.2.1",
-    "@radix-ui/react-toggle": "1.2.1",
     "@radix-ui/react-toggle-group": "1.2.1",
     "@radix-ui/react-tooltip": "1.4.1",
     "@tauri-apps/api": "2.12.1",
@@ -58,7 +54,6 @@
     "@vitejs/plugin-react": "6.1.1",
     "autoprefixer": "^10.6.1",
     "postcss": "^8.5.28",
-    "prettier": "^3.9.9",
     "tailwindcss": "^3.4.19",
     "typescript": "7.0.2",
     "vite": "8.3.2"

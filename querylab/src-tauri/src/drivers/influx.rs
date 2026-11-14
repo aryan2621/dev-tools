@@ -1,8 +1,9 @@
 use super::Driver;
+use crate::parsers::{json_row};
 use crate::error::{DriverError, DriverResult};
 use crate::http::{send_json, send_text, Http};
 use crate::model::{QueryResult, Row, SchemaInfo};
-use crate::parsers::{json_result, objects_result, parse_csv, stringify};
+use crate::parsers::{json_result, objects_result, parse_csv};
 use crate::profile::ConnectionProfile;
 use async_trait::async_trait;
 use reqwest::RequestBuilder;
@@ -42,7 +43,7 @@ impl InfluxDriver {
         };
         let columns = first["columns"].as_array().map(|c| c.iter().filter_map(|n| n.as_str().map(String::from)).collect()).unwrap_or_default();
         let rows = series.iter().flat_map(|s| s["values"].as_array().cloned().unwrap_or_default()).map(|row| -> Row {
-            row.as_array().map(|cells| cells.iter().map(stringify).collect()).unwrap_or_default()
+            json_row(&row)
         });
         Ok(QueryResult::table(columns, rows, limit))
     }
@@ -77,8 +78,6 @@ impl Driver for InfluxDriver {
     async fn connect(&self) -> DriverResult<()> {
         send_text(self.http.get("/ping")).await.map(|_| ())
     }
-
-    async fn disconnect(&self) {}
 
     async fn run(&self, input: &str, operation: Option<&str>, row_limit: usize) -> DriverResult<QueryResult> {
         match operation.unwrap_or(DEFAULT_OPERATION) {

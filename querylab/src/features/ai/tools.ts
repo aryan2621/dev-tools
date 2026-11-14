@@ -1,4 +1,5 @@
 import { api } from "@/api";
+import { searchHistory } from "@/lib/format";
 import type { QueryDraft } from "@/lib/templates";
 import type { HistoryEntry, Profile, QueryResult, QueryTab, RunOutcome, SchemaInfo, ToolDef } from "@/types";
 
@@ -12,7 +13,6 @@ export interface ToolContext {
   profiles: Profile[];
   connectedIds: string[];
   activeTab: QueryTab | undefined;
-  rowLimit: number;
   newTab: (profileId: string, draft?: QueryDraft) => void;
   patchTab: (id: string, patch: Partial<QueryTab>) => void;
   run: (tab: QueryTab, selection: string) => Promise<RunOutcome>;
@@ -143,11 +143,9 @@ export const TOOLS: ToolSpec[] = [
     needsApproval: false,
     run: async (args, ctx) => {
       const profile = requireProfile(ctx, args);
-      const needle = text(args, "search").toLowerCase();
+      const needle = text(args, "search");
       const entries = await api<HistoryEntry[]>("history_list", { id: profile.id });
-      return entries
-        .filter((entry) => entry.input.toLowerCase().includes(needle))
-        .sort((a, b) => b.at - a.at)
+      return searchHistory(entries, needle)
         .slice(0, HISTORY_LIMIT)
         .map((entry) => ({ input: entry.input, ok: entry.ok, at: new Date(entry.at).toISOString() }));
     },
@@ -191,8 +189,10 @@ export const TOOLS: ToolSpec[] = [
     needsApproval: true,
     preview: (args, ctx) => {
       const query = text(args, "query");
+      const profile = profileOf(ctx, args);
+      const production = profile?.options.production === "true";
       return [
-        { field: "Connection", after: profileOf(ctx, args)?.name ?? "(unknown)" },
+        { field: "Connection", after: `${profile?.name ?? "(unknown)"}${production ? " (production)" : ""}` },
         { field: DESTRUCTIVE.test(query) ? "Query (changes data or schema)" : "Query", after: query },
       ];
     },

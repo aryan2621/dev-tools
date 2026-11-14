@@ -11,7 +11,7 @@ export interface EngineMeta {
   defaultPort: number;
   inputStyle: "sql" | "json" | "command" | "cypher" | "cql" | "text";
   isSql: boolean;
-  driverKind: "native" | "http" | "cli";
+  driverKind: "native" | "http";
   operations: string[];
   defaultOperation: string | null;
   consoleHint: string | null;
@@ -21,7 +21,6 @@ export interface EngineMeta {
   optionFields: OptionField[];
   sslModes: string[];
   defaultSslMode: string;
-  installHint: string | null;
 }
 
 export interface Profile {
@@ -36,10 +35,15 @@ export interface Profile {
   filePath: string;
   uri: string;
   sslMode: string;
-  region: string;
-  awsProfile: string;
-  endpointUrl: string;
   options: Record<string, string>;
+}
+
+export interface TableView {
+  object: SchemaObject;
+  page: number;
+  orderBy: string | null;
+  desc: boolean;
+  where: string;
 }
 
 export interface QueryResult {
@@ -86,6 +90,7 @@ export interface QueryTab {
   result: QueryResult | null;
   error: string | null;
   runId: string | null;
+  table?: TableView;
 }
 
 export interface ProviderConfig {

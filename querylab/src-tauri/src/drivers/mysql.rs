@@ -1,4 +1,5 @@
 use super::Driver;
+use crate::parsers::{ALL_ROWS};
 use crate::error::{DriverError, DriverResult};
 use crate::model::{QueryResult, Row, SchemaInfo};
 use crate::profile::ConnectionProfile;
@@ -108,7 +109,7 @@ impl Driver for MySqlDriver {
     }
 
     async fn schema(&self) -> DriverResult<SchemaInfo> {
-        let result = self.run(SCHEMA_SQL, None, usize::MAX - 1).await?;
+        let result = self.run(SCHEMA_SQL, None, ALL_ROWS).await?;
         if result.rows.is_empty() && self.profile.database.is_empty() {
             return Ok(SchemaInfo::note("Set a database on the connection to browse its tables."));
         }

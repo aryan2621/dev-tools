@@ -84,6 +84,13 @@ pub async fn run_query(
 }
 
 #[tauri::command]
+pub async fn apply_edits(store: State<'_, Store>, sessions: State<'_, Sessions>, id: String, statements: Vec<String>) -> CommandResult<()> {
+    let outcome = sessions.driver(&id).map_err(failure)?.apply(&statements).await;
+    store.push_history(&id, HistoryEntry::now(&statements.join(";\n"), None, outcome.is_ok()))?;
+    outcome.map_err(failure)
+}
+
+#[tauri::command]
 pub fn cancel_run(sessions: State<Sessions>, run_id: String) {
     sessions.cancel(&run_id);
 }
@@ -159,14 +166,6 @@ pub fn save_ai_provider(store: State<Store>, provider: Provider, key: Option<Str
     }
     let mut settings = store.ai_settings();
     settings.upsert(provider);
-    store.save_ai_settings(&settings)?;
-    Ok(settings.view())
-}
-
-#[tauri::command]
-pub fn set_active_provider(store: State<Store>, id: String) -> CommandResult<AiSettingsView> {
-    let mut settings = store.ai_settings();
-    settings.active = id;
     store.save_ai_settings(&settings)?;
     Ok(settings.view())
 }

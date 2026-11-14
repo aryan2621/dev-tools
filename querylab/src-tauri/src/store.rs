@@ -49,6 +49,12 @@ impl Store {
         })
     }
 
+    // Entries that no longer parse (e.g. a removed engine) are skipped instead of discarding every profile.
+    fn read_profiles(&self) -> Vec<ConnectionProfile> {
+        let raw: Vec<serde_json::Value> = self.read_json("profiles.json");
+        raw.into_iter().filter_map(|value| serde_json::from_value(value).ok()).collect()
+    }
+
     fn write_json<T: Serialize>(&self, name: &str, value: &T) -> Result<(), String> {
         let path = self.dir.join(name);
         let temp = path.with_extension("json.tmp");
@@ -69,7 +75,7 @@ impl Store {
 
     pub fn profiles(&self) -> Vec<ConnectionProfile> {
         let _guard = self.lock.lock().unwrap();
-        let mut profiles: Vec<ConnectionProfile> = self.read_json("profiles.json");
+        let mut profiles = self.read_profiles();
         profiles.iter_mut().for_each(Self::hydrate);
         profiles
     }
@@ -77,7 +83,7 @@ impl Store {
     pub fn save_profile(&self, mut profile: ConnectionProfile) -> Result<ConnectionProfile, String> {
         profile.normalize();
         let _guard = self.lock.lock().unwrap();
-        let mut stored: Vec<ConnectionProfile> = self.read_json("profiles.json");
+        let mut stored = self.read_profiles();
         let mut stripped = profile.clone();
         for (name, field) in URI_FIELDS {
             let value = field(&mut stripped);
@@ -97,7 +103,7 @@ impl Store {
 
     pub fn delete_profile(&self, id: &str) -> Result<(), String> {
         let _guard = self.lock.lock().unwrap();
-        let mut stored: Vec<ConnectionProfile> = self.read_json("profiles.json");
+        let mut stored = self.read_profiles();
         stored.retain(|profile| profile.id != id);
         self.write_json("profiles.json", &stored)?;
         secrets::delete(id);
@@ -111,7 +117,7 @@ impl Store {
 
     pub fn profile(&self, id: &str) -> Result<ConnectionProfile, String> {
         let _guard = self.lock.lock().unwrap();
-        let stored: Vec<ConnectionProfile> = self.read_json("profiles.json");
+        let stored = self.read_profiles();
         let mut profile = stored.into_iter().find(|profile| profile.id == id).ok_or_else(|| "Connection not found.".to_string())?;
         Self::hydrate(&mut profile);
         Ok(profile)

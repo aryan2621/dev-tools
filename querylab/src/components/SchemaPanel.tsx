@@ -1,12 +1,12 @@
 import { ChevronRight, Copy, Eye, KeyRound, Layers, Play, RefreshCw, Search, Table2, TextCursorInput, X, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { toast } from "sonner";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
+import { cn, without } from "@/lib/utils";
+import { copyWithToast } from "../lib/notify";
 import type { SchemaState } from "../hooks/useSchema";
 import type { SchemaObject } from "../types";
 import { IconAction } from "./Hint";
@@ -44,7 +44,7 @@ function SchemaObjectRow({ object, open, onOpenChange, canSelectRows, onSelectRo
 }) {
   const expandable = object.columns.length > 0;
   const KindIcon = kindIcon(object.kind);
-  const copyName = () => navigator.clipboard.writeText(object.name).then(() => toast.success(`Copied ${object.name}`));
+  const copyName = () => copyWithToast(object.name, `Copied ${object.name}`);
   return (
     <Collapsible open={open && expandable} onOpenChange={onOpenChange}>
       <ContextMenu>
@@ -56,7 +56,7 @@ function SchemaObjectRow({ object, open, onOpenChange, canSelectRows, onSelectRo
             <ChevronRight aria-hidden className={cn("size-3 shrink-0 text-muted-foreground/70 transition-transform duration-100 ease-out group-hover:text-muted-foreground", open && "rotate-90", !expandable && "invisible")} />
             <KindIcon aria-hidden className={cn("size-3 shrink-0", expandable ? "text-muted-foreground" : "text-muted-foreground/60")} />
             <span className={cn("min-w-0 flex-1 truncate", object.kind.toLowerCase() === "table" ? "font-medium" : "text-foreground/80")}>{object.name}</span>
-            <span className="text-[10px] uppercase tracking-wide text-muted-foreground/70">{object.kind}</span>
+            {object.kind.toLowerCase() !== "table" && <span className="text-[10px] text-muted-foreground/70">{object.kind.toLowerCase()}</span>}
           </CollapsibleTrigger>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-44">
@@ -112,26 +112,16 @@ export function SchemaPanel({ state, profileId, connected, canSelectRows, onSele
 
   const setOpen = (name: string, open: boolean) =>
     setExpanded((current) => {
-      const next = new Set(current);
-      if (open) next.add(name);
-      else next.delete(name);
-      return next;
+      return open ? new Set(current).add(name) : without(current, name);
     });
 
   const hasObjects = Boolean(schema?.objects.length);
 
   return (
-    <section aria-label="Schema" aria-busy={loading} className="flex h-full flex-col bg-background">
-      <div className="flex h-9 shrink-0 items-center gap-1.5 pl-3 pr-2">
-        <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Schema</h2>
-        {hasObjects && <span className="rounded-full bg-muted px-1.5 text-[10px] font-medium tabular-nums text-muted-foreground">{schema?.objects.length}</span>}
-        <IconAction label="Refresh schema" className="ml-auto" onClick={reload} disabled={!connected || loading}>
-          <RefreshCw className={cn(loading && "animate-spin")} />
-        </IconAction>
-      </div>
-      {hasObjects && (
-        <div className="relative shrink-0 px-2 pb-2">
-          <Search aria-hidden className="pointer-events-none absolute left-4 top-2 size-3 text-muted-foreground" />
+    <section aria-label="Schema" aria-busy={loading} className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center gap-1 p-2">
+        <div className="relative min-w-0 flex-1">
+          <Search aria-hidden className="pointer-events-none absolute left-2 top-2 size-3 text-muted-foreground" />
           <Input
             id="schema-filter"
             ref={filterRef}
@@ -150,13 +140,16 @@ export function SchemaPanel({ state, profileId, connected, canSelectRows, onSele
                 setFilter("");
                 filterRef.current?.focus();
               }}
-              className="absolute right-3.5 top-1.5 grid size-4 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="absolute right-1.5 top-1.5 grid size-4 place-items-center rounded-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <X className="size-3" />
             </button>
           )}
         </div>
-      )}
+        <IconAction label="Refresh schema" onClick={reload} disabled={!connected || loading}>
+          <RefreshCw className={cn(loading && "animate-spin")} />
+        </IconAction>
+      </div>
       <ScrollArea className="min-h-0 flex-1">
         {!connected && <StateMessage icon={Table2} title="Not connected" hint="Connect to browse tables." className="p-3" />}
         {connected && loading && !schema && (

@@ -1,15 +1,21 @@
 import { listen } from "@tauri-apps/api/event";
 import { type ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/api";
-import { attempt } from "@/lib/notify";
+import { attempt, errorText } from "@/lib/notify";
 import type { AiSettings, AiStep, ToolCall, ToolOutput } from "@/types";
 import { type PreviewRow, type ToolContext, TOOLS, toolByName } from "./tools";
 
 const MAX_ROUNDS = 12;
 
-const SYSTEM = `You are the assistant inside QueryLab, a desktop database client. Inspect the user's connections, schema, open query and results with tools. Read first, then act. Query edits, new tabs and query runs are shown to the user for approval before they happen. Match the SQL dialect to the connection's engine. Be brief and concrete. Never invent table or column names; check the schema.`;
+const BASE_PROMPT = `You are the assistant inside QueryLab, a desktop database client. Inspect the user's connections, schema, open query and results with tools. Read first, then act. Query edits, new tabs and query runs are shown to the user for approval before they happen. Match the SQL dialect to the connection's engine. Be brief and concrete. Never invent table or column names; check the schema.`;
 
-const errorText = (error: unknown) => (typeof error === "string" ? error : error instanceof Error ? error.message : String(error));
+const systemPrompt = ({ activeTab, profiles }: ToolContext) => {
+  const profile = profiles.find((entry) => entry.id === activeTab?.profileId);
+  return profile
+    ? `${BASE_PROMPT} The open query runs on "${profile.name || profile.engine}", a ${profile.engine} connection. Write only ${profile.engine} syntax: no statements from other engines (for example USE or SHOW DATABASES on SQLite).`
+    : BASE_PROMPT;
+};
+
 
 export interface ChatMessage {
   id: string;
@@ -94,7 +100,7 @@ export function AgentProvider({ context, children }: { context: ToolContext; chi
           push("tool", `${call.name} declined`);
           return "The user declined this action.";
         }
-        if (decision === "always") always.current.add(call.name);
+        if (decision === "always" && call.name !== "run_query") always.current.add(call.name);
       }
       try {
         const output = await spec.run(call.arguments, contextRef.current);
@@ -127,7 +133,7 @@ export function AgentProvider({ context, children }: { context: ToolContext; chi
             input,
             results,
             tools,
-            system: SYSTEM,
+            system: systemPrompt(contextRef.current),
           });
           setLive("");
           if (!step || cancelled.current) return;

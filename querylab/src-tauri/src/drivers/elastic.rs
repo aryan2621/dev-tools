@@ -1,9 +1,10 @@
 use super::Driver;
+use crate::parsers::{json_row};
 use crate::engine::EngineKind;
 use crate::error::{DriverError, DriverResult};
 use crate::http::{parse_json_input, send_json, with_basic_auth, Http};
 use crate::model::{QueryResult, Row, SchemaInfo};
-use crate::parsers::{json_result, objects_result, stringify};
+use crate::parsers::{json_result, objects_result};
 use crate::profile::ConnectionProfile;
 use async_trait::async_trait;
 use reqwest::RequestBuilder;
@@ -72,7 +73,7 @@ fn sql_result(reply: &Value, limit: usize) -> Option<QueryResult> {
         .map(|column| column.get("name").and_then(Value::as_str).unwrap_or("").to_string())
         .collect();
     let rows = rows.as_array()?.iter().map(|row| -> Row {
-        row.as_array().map(|cells| cells.iter().map(stringify).collect()).unwrap_or_default()
+        json_row(&row)
     });
     Some(QueryResult::table(columns, rows, limit))
 }
@@ -89,8 +90,6 @@ impl Driver for ElasticDriver {
     async fn connect(&self) -> DriverResult<()> {
         send_json(self.authorize(self.http.get("/"))).await.map(|_| ())
     }
-
-    async fn disconnect(&self) {}
 
     async fn run(&self, input: &str, operation: Option<&str>, row_limit: usize) -> DriverResult<QueryResult> {
         let operation = operation.unwrap_or(DEFAULT_OPERATION);

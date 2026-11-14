@@ -1,4 +1,5 @@
 use super::Driver;
+use crate::parsers::{ALL_ROWS};
 use crate::error::{DriverError, DriverResult};
 use crate::model::{QueryResult, Row, SchemaInfo};
 use crate::profile::ConnectionProfile;
@@ -214,7 +215,7 @@ impl Driver for PostgresDriver {
     }
 
     async fn schema(&self) -> DriverResult<SchemaInfo> {
-        let result = self.current()?.simple(SCHEMA_SQL, usize::MAX - 1).await?;
+        let result = self.current()?.simple(SCHEMA_SQL, ALL_ROWS).await?;
         Ok(SchemaInfo::from_column_rows(&result.rows))
     }
 }

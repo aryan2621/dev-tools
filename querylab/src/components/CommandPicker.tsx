@@ -2,7 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import { CommandDialog, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList, CommandSeparator } from "@/components/ui/command";
 import { Keys } from "./Hint";
 
-export interface PickerItem {
+interface PickerItem {
   id: string;
   label: string;
   icon?: LucideIcon;

@@ -12,28 +12,18 @@
 
 ## Engines
 
-| Engine | Driver | External tool |
-| --- | --- | --- |
-| SQLite | Native | none |
-| PostgreSQL, CockroachDB, Amazon Redshift | Native (PostgreSQL wire) | none |
-| MySQL, MariaDB | Native | none |
-| MongoDB | Native | none |
-| Redis | Native | none |
-| Elasticsearch, OpenSearch | HTTP | none |
-| ClickHouse | HTTP | none |
-| Databricks | HTTP (SQL Statement API) | none |
-| InfluxDB | HTTP | none |
-| Neo4j | HTTP (transaction endpoint) | none |
-| SQL Server | CLI | `sqlcmd` |
-| Oracle | CLI | `sqlplus` |
-| DynamoDB | CLI | `aws` |
-| Cassandra | CLI | `cqlsh` |
-| Snowflake | CLI | `snowsql` |
-| BigQuery | CLI | `bq` |
-
-CLI engines run the vendor tool as a subprocess. If it is missing, QueryLab tells you which tool
-to install and how. Set `QL_<TOOL>_PATH` (for example `QL_SQLCMD_PATH`) to point at a custom
-location.
+| Engine | Driver |
+| --- | --- |
+| SQLite | Native |
+| PostgreSQL, CockroachDB, Amazon Redshift | Native (PostgreSQL wire) |
+| MySQL, MariaDB | Native |
+| MongoDB | Native |
+| Redis | Native |
+| Elasticsearch, OpenSearch | HTTP |
+| ClickHouse | HTTP |
+| Databricks | HTTP (SQL Statement API) |
+| InfluxDB | HTTP |
+| Neo4j | HTTP (transaction endpoint) |
 
 ## Status
 
@@ -44,7 +34,7 @@ them.
 ## Quick start
 
 1. Click **+** in the sidebar, pick an engine and fill in the connection.
-2. Double-click the connection to connect. A query tab opens.
+2. Pick the connection in the switcher at the top of the sidebar to connect. A query tab opens.
 3. Press **Cmd+Enter** (Ctrl+Enter) to run. **Cmd+K** (Ctrl+K) opens every command.
 4. Press **Cmd+J** (Ctrl+J) for the AI assistant. Add a provider in its settings first.
 

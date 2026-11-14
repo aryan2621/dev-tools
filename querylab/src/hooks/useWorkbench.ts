@@ -4,11 +4,11 @@ import { toast } from "sonner";
 import { api } from "../api";
 import type { EngineMeta, Profile, QueryResult, QueryTab } from "../types";
 import type { QueryDraft } from "../lib/templates";
-import { attempt } from "../lib/notify";
+import { attempt, errorText } from "../lib/notify";
+import { without } from "../lib/utils";
 
 export type ExportFormat = "csv" | "json";
 
-const errorText = (error: unknown) => (typeof error === "string" ? error : error instanceof Error ? error.message : String(error));
 
 const TABS_KEY = "querylab:tabs";
 const ROW_LIMIT_KEY = "querylab:row-limit";
@@ -100,10 +100,12 @@ export function useWorkbench() {
         result: null,
         error: null,
         runId: null,
+        table: draft?.table,
       };
       setTabs((current) => [...current, tab]);
       setActiveTabs((current) => ({ ...current, [profileId]: tab.id }));
       setActiveProfileId(profileId);
+      return tab;
     },
     [engineFor, profiles],
   );
@@ -136,11 +138,7 @@ export function useWorkbench() {
       } catch (error) {
         toast.error(`Could not connect to ${profileName(id)}`, { description: errorText(error), action: { label: "Retry", onClick: () => connect(id) } });
       } finally {
-        setConnecting((current) => {
-          const next = new Set(current);
-          next.delete(id);
-          return next;
-        });
+        setConnecting((current) => without(current, id));
       }
     },
     [newTab, tabs, profileName],
@@ -149,11 +147,7 @@ export function useWorkbench() {
   const disconnect = useCallback(
     async (id: string) => {
       if ((await attempt(() => api("disconnect", { id }), undefined, "Could not disconnect")) === undefined) return;
-      setConnected((current) => {
-        const next = new Set(current);
-        next.delete(id);
-        return next;
-      });
+      setConnected((current) => without(current, id));
       toast(`Disconnected from ${profileName(id)}`);
     },
     [profileName],
@@ -175,11 +169,7 @@ export function useWorkbench() {
       if ((await attempt(() => api("profile_delete", { id }), undefined, "Could not delete connection")) === undefined) return;
       setProfiles((current) => current.filter((profile) => profile.id !== id));
       setTabs((current) => current.filter((tab) => tab.profileId !== id));
-      setConnected((current) => {
-        const next = new Set(current);
-        next.delete(id);
-        return next;
-      });
+      setConnected((current) => without(current, id));
       if (activeProfileId === id) setActiveProfileId(profiles.find((profile) => profile.id !== id)?.id ?? null);
     },
     [activeProfileId, profiles],

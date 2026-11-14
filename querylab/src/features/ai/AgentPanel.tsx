@@ -1,10 +1,9 @@
-import { Check, Eraser, Info, Settings2, Square, X } from "lucide-react";
+import { Check, Eraser, Settings2, Square, X } from "lucide-react";
 import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import { IconAction } from "@/components/Hint";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import type { Profile, QueryTab } from "@/types";
 import { type ChatMessage, type PendingApproval, useAgent } from "./useAgent";
 
 const markdownComponents = {
@@ -12,7 +11,7 @@ const markdownComponents = {
   ul: (props: object) => <ul className="my-1.5 list-disc pl-5" {...props} />,
   ol: (props: object) => <ol className="my-1.5 list-decimal pl-5" {...props} />,
   a: (props: object) => <a className="text-primary underline" target="_blank" rel="noreferrer" {...props} />,
-  pre: (props: object) => <pre className="my-1.5 overflow-x-auto rounded-md border border-border bg-muted p-2 font-mono text-sm" {...props} />,
+  pre: (props: object) => <pre className="my-1.5 max-w-full overflow-x-auto rounded-md border border-border bg-muted p-2 font-mono text-sm" {...props} />,
   code: (props: object) => <code className="font-mono text-sm" {...props} />,
 };
 
@@ -36,7 +35,7 @@ function Message({ message }: { message: ChatMessage }) {
     return <p className="ml-6 whitespace-pre-wrap rounded-md bg-primary-soft px-2.5 py-1.5 text-sm">{message.text}</p>;
   }
   return (
-    <div className="text-sm leading-relaxed">
+    <div className="min-w-0 text-sm leading-relaxed">
       <Markdown components={markdownComponents}>{message.text}</Markdown>
     </div>
   );
@@ -61,9 +60,11 @@ function ApprovalCard({ pending }: { pending: PendingApproval }) {
         <Button size="sm" onClick={() => pending.decide("approve")}>
           Approve
         </Button>
-        <Button size="sm" variant="outline" onClick={() => pending.decide("always")}>
-          Always allow
-        </Button>
+        {pending.call.name !== "run_query" && (
+          <Button size="sm" variant="outline" onClick={() => pending.decide("always")}>
+            Always allow
+          </Button>
+        )}
         <Button size="sm" variant="ghost" onClick={() => pending.decide("deny")}>
           Deny
         </Button>
@@ -72,26 +73,7 @@ function ApprovalCard({ pending }: { pending: PendingApproval }) {
   );
 }
 
-const chip = "rounded-sm border border-border px-1.5 py-0.5";
-
-function Context({ profile, tab }: { profile: Profile | undefined; tab: QueryTab | undefined }) {
-  if (!profile) return null;
-  return (
-    <p className="flex flex-wrap gap-1.5 text-xs text-muted-foreground">
-      <span className={chip}>{profile.name}</span>
-      {tab && <span className={chip}>{tab.title}</span>}
-      {tab?.error && <span className={chip}>error in tab</span>}
-    </p>
-  );
-}
-
-interface AgentPanelProps {
-  profile: Profile | undefined;
-  tab: QueryTab | undefined;
-  onSettings: () => void;
-}
-
-export function AgentPanel({ profile, tab, onSettings }: AgentPanelProps) {
+export function AgentPanel({ onSettings }: { onSettings: () => void }) {
   const agent = useAgent();
   const [draft, setDraft] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
@@ -120,9 +102,6 @@ export function AgentPanel({ profile, tab, onSettings }: AgentPanelProps) {
         <h2 className="text-sm font-medium">Assistant</h2>
         {provider && <span className="min-w-0 truncate text-xs text-muted-foreground">{provider.model || provider.id}</span>}
         <span className="ml-auto flex items-center">
-          <IconAction label="AI can make mistakes. Check its answers and edits before you rely on them.">
-            <Info />
-          </IconAction>
           <IconAction label="Clear chat" onClick={agent.clear}>
             <Eraser />
           </IconAction>
@@ -145,19 +124,18 @@ export function AgentPanel({ profile, tab, onSettings }: AgentPanelProps) {
         ) : agent.messages.length === 0 ? (
           <p className="text-sm text-muted-foreground">Ask about the open query, or describe a query to write.</p>
         ) : (
-          <div className="grid gap-3">
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-3 break-words">
             {agent.messages.map((message) => (
               <Message key={message.id} message={message} />
             ))}
             {agent.pending && <ApprovalCard pending={agent.pending} />}
             {agent.live && <Message message={{ id: "live", role: "assistant", text: agent.live }} />}
-            {agent.busy && !agent.pending && !agent.live && <p className="text-xs text-muted-foreground">Thinking…</p>}
+            {agent.busy && !agent.pending && !agent.live && <p className="text-xs text-muted-foreground">Thinking</p>}
           </div>
         )}
         <div ref={endRef} />
       </div>
       <footer className="grid shrink-0 gap-2 border-t border-border p-3">
-        <Context profile={profile} tab={tab} />
         <Textarea
           aria-label="Message"
           value={draft}

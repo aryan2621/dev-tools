@@ -26,21 +26,12 @@ pub struct ConnectionProfile {
     #[serde(default)]
     pub ssl_mode: String,
     #[serde(default)]
-    pub region: String,
-    #[serde(default)]
-    pub aws_profile: String,
-    #[serde(default)]
-    pub endpoint_url: String,
-    #[serde(default)]
     pub options: BTreeMap<String, String>,
 }
 
 type StringField = fn(&mut ConnectionProfile) -> &mut String;
 
-pub const URI_FIELDS: [(&str, StringField); 2] = [
-    ("uri", |profile| &mut profile.uri),
-    ("endpointUrl", |profile| &mut profile.endpoint_url),
-];
+pub const URI_FIELDS: [(&str, StringField); 1] = [("uri", |profile| &mut profile.uri)];
 
 impl ConnectionProfile {
     pub fn option(&self, key: &str) -> &str {
@@ -65,9 +56,6 @@ impl ConnectionProfile {
         if self.ssl_mode.is_empty() {
             self.ssl_mode = spec.default_ssl_mode.into();
         }
-        if self.region.is_empty() {
-            self.region = "us-east-1".into();
-        }
         if self.uri.is_empty() && self.engine == EngineKind::Mongodb {
             self.uri = "mongodb://localhost:27017".into();
         }
@@ -79,8 +67,7 @@ impl ConnectionProfile {
     fn default_name(&self) -> String {
         match self.engine {
             EngineKind::Sqlite => "Local SQLite".into(),
-            EngineKind::Mongodb | EngineKind::Bigquery => self.engine.spec().display_name.into(),
-            EngineKind::Dynamodb => format!("DynamoDB ({})", self.region),
+            EngineKind::Mongodb => self.engine.spec().display_name.into(),
             engine => format!("{} @ {}", engine.spec().display_name, self.host),
         }
     }

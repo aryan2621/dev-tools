@@ -1,8 +1,8 @@
 use super::Driver;
+use crate::parsers::{json_row, ALL_ROWS};
 use crate::error::{DriverError, DriverResult};
 use crate::http::{send_json, with_basic_auth, Http};
 use crate::model::{QueryResult, Row, SchemaInfo};
-use crate::parsers::stringify;
 use crate::profile::ConnectionProfile;
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -45,8 +45,6 @@ impl Driver for Neo4jDriver {
         self.commit("RETURN 1").await.map(|_| ())
     }
 
-    async fn disconnect(&self) {}
-
     async fn run(&self, input: &str, _operation: Option<&str>, row_limit: usize) -> DriverResult<QueryResult> {
         let reply = self.commit(input).await?;
         let result = &reply["results"][0];
@@ -58,13 +56,13 @@ impl Driver for Neo4jDriver {
             return Ok(QueryResult::message("OK"));
         }
         let rows = result["data"].as_array().cloned().unwrap_or_default().into_iter().map(|entry| -> Row {
-            entry["row"].as_array().map(|cells| cells.iter().map(stringify).collect()).unwrap_or_default()
+            json_row(&entry["row"])
         });
         Ok(QueryResult::table(columns, rows, row_limit))
     }
 
     async fn schema(&self) -> DriverResult<SchemaInfo> {
-        let result = self.run("CALL db.labels() YIELD label RETURN label ORDER BY label", None, usize::MAX / 2).await?;
+        let result = self.run("CALL db.labels() YIELD label RETURN label ORDER BY label", None, ALL_ROWS).await?;
         let labels = result.rows.into_iter().filter_map(|row| row.into_iter().next().flatten()).collect::<Vec<_>>();
         Ok(SchemaInfo::names("label", labels))
     }

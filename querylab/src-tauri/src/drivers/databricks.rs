@@ -1,8 +1,8 @@
 use super::Driver;
+use crate::parsers::{json_row, ALL_ROWS};
 use crate::error::{DriverError, DriverResult};
 use crate::http::{send_json, Http};
 use crate::model::{QueryResult, Row, SchemaInfo};
-use crate::parsers::stringify;
 use crate::profile::ConnectionProfile;
 use async_trait::async_trait;
 use serde_json::{json, Value};
@@ -77,7 +77,7 @@ fn present(reply: &Value, limit: usize) -> QueryResult {
     let names = columns.iter().map(|column| column["name"].as_str().unwrap_or("").to_string()).collect();
     let types = columns.iter().map(|column| column["type_text"].as_str().unwrap_or("").to_string()).collect();
     let rows = reply["result"]["data_array"].as_array().cloned().unwrap_or_default().into_iter().map(|row| -> Row {
-        row.as_array().map(|cells| cells.iter().map(stringify).collect()).unwrap_or_default()
+        json_row(&row)
     });
     QueryResult::table(names, rows, limit).with_types(types)
 }
@@ -87,8 +87,6 @@ impl Driver for DatabricksDriver {
     async fn connect(&self) -> DriverResult<()> {
         self.execute("SELECT 1", 1).await.map(|_| ())
     }
-
-    async fn disconnect(&self) {}
 
     async fn cancel(&self) {
         let id = self.statement_id.lock().unwrap().clone();
@@ -114,7 +112,7 @@ impl Driver for DatabricksDriver {
                ON t.table_schema = c.table_schema AND t.table_name = c.table_name \
              WHERE c.table_schema = '{schema}' ORDER BY c.table_name, c.ordinal_position"
         );
-        let result = self.run(&sql, None, usize::MAX / 2).await?;
+        let result = self.run(&sql, None, ALL_ROWS).await?;
         Ok(SchemaInfo::from_column_rows(&result.rows))
     }
 }

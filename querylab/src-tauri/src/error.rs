@@ -8,12 +8,8 @@ pub enum DriverError {
     NotConnected,
     #[error("{0}")]
     Unsupported(String),
-    #[error("Timed out while {0}.")]
-    TimedOut(String),
     #[error("Query cancelled.")]
     Cancelled,
-    #[error("Could not find the `{name}` command-line tool, which is needed for this engine.\n\nInstall it with:\n    {hint}")]
-    BinaryMissing { name: String, hint: String },
 }
 
 pub type DriverResult<T> = Result<T, DriverError>;

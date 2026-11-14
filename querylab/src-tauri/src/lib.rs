@@ -6,7 +6,6 @@ mod error;
 mod http;
 mod model;
 mod parsers;
-mod process;
 mod profile;
 mod secrets;
 mod session;
@@ -52,6 +51,7 @@ pub fn run() {
             commands::disconnect,
             commands::connected_ids,
             commands::run_query,
+            commands::apply_edits,
             commands::cancel_run,
             commands::schema,
             commands::history_list,
@@ -59,7 +59,6 @@ pub fn run() {
             commands::export_result,
             commands::get_ai_settings,
             commands::save_ai_provider,
-            commands::set_active_provider,
             commands::list_provider_models,
             commands::ai_step,
             commands::ai_cancel,

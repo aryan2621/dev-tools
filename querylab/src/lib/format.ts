@@ -1,4 +1,9 @@
-import type { Profile } from "../types";
+import type { HistoryEntry, Profile } from "../types";
+
+export function searchHistory(entries: HistoryEntry[], search: string): HistoryEntry[] {
+  const needle = search.trim().toLowerCase();
+  return entries.filter((entry) => entry.input.toLowerCase().includes(needle)).sort((a, b) => b.at - a.at);
+}
 
 export function formatDuration(ms: number): string {
   return ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(2)} s`;

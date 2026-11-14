@@ -1,6 +1,6 @@
 import { toast } from "sonner";
 
-const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error));
+export const errorText = (error: unknown) => (typeof error === "string" ? error : error instanceof Error ? error.message : String(error));
 
 export async function attempt<T>(task: () => Promise<T>, success?: string, failure = "Something went wrong"): Promise<T | undefined> {
   try {
@@ -8,7 +8,7 @@ export async function attempt<T>(task: () => Promise<T>, success?: string, failu
     if (success) toast.success(success);
     return result;
   } catch (error) {
-    toast.error(failure, { description: messageOf(error) });
+    toast.error(failure, { description: errorText(error) });
     return undefined;
   }
 }

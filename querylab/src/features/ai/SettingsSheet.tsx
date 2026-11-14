@@ -1,11 +1,11 @@
 import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "@/api";
-import { Field, SelectField } from "@/components/ConnectionForm";
+import { Field, SelectField } from "@/components/Field";
 import { Button } from "@/components/ui/button";
 import { SelectItem } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { attempt } from "@/lib/notify";
+import { attempt, errorText } from "@/lib/notify";
 import type { AiSettings, ProviderConfig } from "@/types";
 import { useAgent } from "./useAgent";
 
@@ -25,7 +25,6 @@ const PROVIDERS: Record<string, ProviderKind> = {
   compatible: { label: "OpenAI-compatible", needsKey: true, editsUrl: true, defaultUrl: "", modelHint: "model id" },
 };
 
-const errorText = (error: unknown) => (typeof error === "string" ? error : error instanceof Error ? error.message : String(error));
 
 interface SettingsSheetProps {
   open: boolean;
@@ -84,12 +83,6 @@ export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
     }
   };
 
-  const activate = async () => {
-    const next = await attempt(() => api<AiSettings>("set_active_provider", { id }), undefined, "Could not switch provider");
-    if (next) setSettings(next);
-  };
-
-  const active = settings?.active === id;
   const canSave = model.trim() !== "" && (!kind.editsUrl || baseUrl.trim() !== "") && (!kind.needsKey || key.trim() !== "" || saved?.hasKey === true);
 
   return (
@@ -147,9 +140,6 @@ export function SettingsSheet({ open, onOpenChange }: SettingsSheetProps) {
           <div className="flex items-center gap-2">
             <Button type="submit" disabled={!canSave}>
               Save
-            </Button>
-            <Button type="button" variant="outline" disabled={active || !saved} onClick={activate}>
-              {active ? "Active" : "Use this provider"}
             </Button>
           </div>
         </form>

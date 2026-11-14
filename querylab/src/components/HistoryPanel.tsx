@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "../api";
 import { attempt } from "../lib/notify";
-import { firstLine, formatTime } from "../lib/format";
+import { firstLine, formatTime, searchHistory } from "../lib/format";
 import type { HistoryEntry } from "../types";
 import { IconAction } from "./Hint";
 import { StateMessage } from "./StateMessage";
@@ -24,13 +24,10 @@ export function HistoryPanel({ profileId, refreshKey, onPick }: HistoryPanelProp
       setEntries([]);
       return;
     }
-    api<HistoryEntry[]>("history_list", { id: profileId }).then((loaded) => setEntries([...loaded].sort((a, b) => b.at - a.at)));
+    api<HistoryEntry[]>("history_list", { id: profileId }).then((loaded) => setEntries(loaded));
   }, [profileId, refreshKey]);
 
-  const visible = useMemo(() => {
-    const needle = filter.trim().toLowerCase();
-    return entries.filter((entry) => entry.input.toLowerCase().includes(needle));
-  }, [entries, filter]);
+  const visible = useMemo(() => searchHistory(entries, filter), [entries, filter]);
 
   const clear = async () => {
     if (profileId && (await attempt(() => api("history_clear", { id: profileId }), undefined, "Could not clear history")) !== undefined) setEntries([]);

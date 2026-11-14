@@ -8,21 +8,12 @@ importers:
 
   .:
     dependencies:
-      '@codemirror/autocomplete':
-        specifier: 6.20.4
-        version: 6.20.4
-      '@codemirror/commands':
-        specifier: 6.11.1
-        version: 6.11.1
       '@codemirror/lang-json':
         specifier: 6.0.2
         version: 6.0.2
       '@codemirror/lang-sql':
         specifier: 6.10.0
         version: 6.10.0
-      '@codemirror/language':
-        specifier: 6.13.1
-        version: 6.13.1
       '@codemirror/state':
         specifier: 6.7.6
         version: 6.7.6
@@ -69,9 +60,6 @@ importers:
         specifier: 1.5.0
         version: 1.5.0(@types/react@19.3.0)(react@19.3.0)
       '@radix-ui/react-tabs':
-        specifier: 1.2.1
-        version: 1.2.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      '@radix-ui/react-toggle':
         specifier: 1.2.1
         version: 1.2.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@radix-ui/react-toggle-group':
@@ -141,9 +129,6 @@ importers:
       postcss:
         specifier: ^8.5.28
         version: 8.5.32
-      prettier:
-        specifier: ^3.9.9
-        version: 3.9.10
       tailwindcss:
         specifier: ^3.4.19
         version: 3.4.19
@@ -1949,11 +1934,6 @@ packages:
   postcss@8.5.32:
     resolution: {integrity: sha512-LJlKCCAUFKOuZxipUdYw1NzIITEsPcgyOG9LkvRJvuKj/bRzbuRY0ARXvL0pWGpsZvn8jku+LMep2eU0seHp8g==}
     engines: {node: ^10 || ^12 || >=14}
-
-  prettier@3.9.10:
-    resolution: {integrity: sha512-skGHTH1Yb9QvaTC4hWnRTzEYtCpApF0UMBPz+t/0ZPzP8ihefo/btKd+QA7pUE0fEwA1SbS/NmhyEcstdXOIdA==}
-    engines: {node: '>=14'}
-    hasBin: true
 
   prop-types@15.8.1:
     resolution: {integrity: sha512-oj87CgZICdulUohogVAR7AjlC0327U4el4L6eAvOqCeudMDVU0NThNaV+b9Df4dXgSP1gXMTnPdhfe/2qDH5cg==}
@@ -4076,8 +4056,6 @@ snapshots:
       nanoid: 3.3.20
       picocolors: 1.1.1
       source-map-js: 1.2.2
-
-  prettier@3.9.10: {}
 
   prop-types@15.8.1:
     dependencies:

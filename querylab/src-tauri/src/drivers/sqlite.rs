@@ -137,3 +137,38 @@ impl Driver for SqliteDriver {
         .await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    async fn driver(name: &str) -> SqliteDriver {
+        let path = std::env::temp_dir().join(format!("querylab-{name}-{}.db", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let profile: ConnectionProfile =
+            serde_json::from_value(serde_json::json!({ "id": name, "engine": "sqlite", "filePath": path })).unwrap();
+        let driver = SqliteDriver::new(profile);
+        driver.connect().await.unwrap();
+        driver.run("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT); INSERT INTO t VALUES (1, 'a'), (2, 'b')", None, 10).await.unwrap();
+        driver
+    }
+
+    async fn values(driver: &SqliteDriver) -> Vec<Option<String>> {
+        driver.run("SELECT v FROM t ORDER BY id", None, 10).await.unwrap().rows.into_iter().map(|row| row[0].clone()).collect()
+    }
+
+    #[tokio::test]
+    async fn apply_commits_all_statements() {
+        let driver = driver("commit").await;
+        driver.apply(&["UPDATE t SET v = 'x' WHERE id = 1".into(), "UPDATE t SET v = 'y' WHERE id = 2".into()]).await.unwrap();
+        assert_eq!(values(&driver).await, [Some("x".into()), Some("y".into())]);
+    }
+
+    #[tokio::test]
+    async fn apply_rolls_back_on_error() {
+        let driver = driver("rollback").await;
+        let outcome = driver.apply(&["UPDATE t SET v = 'x' WHERE id = 1".into(), "UPDATE missing SET v = 'z'".into()]).await;
+        assert!(outcome.is_err());
+        assert_eq!(values(&driver).await, [Some("a".into()), Some("b".into())]);
+    }
+}

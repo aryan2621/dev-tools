@@ -2,6 +2,13 @@ use crate::error::DriverResult;
 use crate::model::{QueryResult, Row};
 use serde_json::{Map, Value};
 
+/// Row limit meaning "everything" for internal schema queries.
+pub const ALL_ROWS: usize = usize::MAX / 2;
+
+pub fn json_row(value: &Value) -> Vec<Option<String>> {
+    value.as_array().map(|cells| cells.iter().map(stringify).collect()).unwrap_or_default()
+}
+
 pub fn stringify(value: &Value) -> Option<String> {
     match value {
         Value::Null => None,
@@ -60,32 +67,4 @@ pub fn parse_csv(text: &str) -> DriverResult<Vec<Vec<String>>> {
         records.push(record?.iter().map(String::from).collect());
     }
     Ok(records)
-}
-
-pub fn csv_result(text: &str, limit: usize) -> DriverResult<QueryResult> {
-    let mut records = parse_csv(text)?;
-    if records.is_empty() || (records.len() == 1 && records[0].iter().all(String::is_empty)) {
-        return Ok(QueryResult::message("OK"));
-    }
-    let columns = records.remove(0);
-    let rows = records.into_iter().map(|record| record.into_iter().map(Some).collect::<Row>());
-    Ok(QueryResult::table(columns, rows, limit))
-}
-
-pub fn aligned_table_result(text: &str, limit: usize) -> QueryResult {
-    let lines: Vec<&str> = text.lines().map(str::trim_end).filter(|line| !line.trim().is_empty()).collect();
-    let separator = lines.iter().position(|line| {
-        let compact = line.trim();
-        !compact.is_empty() && compact.chars().all(|c| matches!(c, '-' | '+' | '|' | ' '))
-    });
-    let Some(separator) = separator.filter(|index| *index > 0) else {
-        return QueryResult::message(if text.trim().is_empty() { "OK" } else { text.trim() });
-    };
-    let split = |line: &str| -> Vec<String> { line.split('|').map(|cell| cell.trim().to_string()).collect() };
-    let columns = split(lines[separator - 1]);
-    let rows = lines[separator + 1..]
-        .iter()
-        .take_while(|line| !(line.starts_with('(') && line.ends_with(')')))
-        .map(|line| split(line).into_iter().map(|cell| if cell == "null" { None } else { Some(cell) }).collect::<Row>());
-    QueryResult::table(columns, rows, limit)
 }

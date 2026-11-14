@@ -30,7 +30,7 @@ const BY_CATEGORY: Record<string, EngineVisual> = {
   Graph: { icon: Share2, className: "border-fuchsia-500/20 bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400" },
 };
 
-export function engineVisual(engine: EngineMeta | undefined): EngineVisual {
+function engineVisual(engine: EngineMeta | undefined): EngineVisual {
   if (!engine) return DEFAULT_VISUAL;
   return BY_KIND[engine.kind] ?? BY_CATEGORY[engine.category] ?? DEFAULT_VISUAL;
 }

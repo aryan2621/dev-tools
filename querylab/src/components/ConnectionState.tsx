@@ -5,7 +5,7 @@ export type ConnectionPhase = "connected" | "connecting" | "disconnected";
 
 const PHASES: Record<ConnectionPhase, { label: string; dot: string; variant: "success" | "warning" | "outline" }> = {
   connected: { label: "Connected", dot: "bg-success", variant: "success" },
-  connecting: { label: "Connecting...", dot: "animate-pulse bg-warning", variant: "warning" },
+  connecting: { label: "Connecting", dot: "animate-pulse bg-warning", variant: "warning" },
   disconnected: { label: "Disconnected", dot: "border border-muted-foreground", variant: "outline" },
 };
 

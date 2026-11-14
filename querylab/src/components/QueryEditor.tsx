@@ -1,10 +1,11 @@
+import { usePrefersDark } from "../hooks/usePrefersDark";
 import { json } from "@codemirror/lang-json";
 import { sql } from "@codemirror/lang-sql";
 import { Prec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import CodeMirror from "@uiw/react-codemirror";
-import { useEffect, useMemo, useState, type MutableRefObject } from "react";
-import type { EngineMeta } from "../types";
+import { useMemo, type MutableRefObject } from "react";
+import type { EngineMeta, SchemaInfo } from "../types";
 
 interface QueryEditorProps {
   engine: EngineMeta | undefined;
@@ -13,6 +14,7 @@ interface QueryEditorProps {
   onRun: () => void;
   viewRef: MutableRefObject<EditorView | null>;
   selectionRef: MutableRefObject<string>;
+  schema?: SchemaInfo;
 }
 
 const editorTheme = EditorView.theme({
@@ -35,26 +37,16 @@ const editorTheme = EditorView.theme({
   ".cm-panels": { backgroundColor: "hsl(var(--sidebar))", color: "hsl(var(--foreground))" },
 });
 
-function usePrefersDark() {
-  const [dark, setDark] = useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
-  useEffect(() => {
-    const query = window.matchMedia("(prefers-color-scheme: dark)");
-    const update = () => setDark(query.matches);
-    query.addEventListener("change", update);
-    return () => query.removeEventListener("change", update);
-  }, []);
-  return dark;
-}
-
-export function QueryEditor({ engine, value, onChange, onRun, viewRef, selectionRef }: QueryEditorProps) {
+export function QueryEditor({ engine, value, onChange, onRun, viewRef, selectionRef, schema }: QueryEditorProps) {
   const dark = usePrefersDark();
+  const sqlSchema = useMemo(() => Object.fromEntries((schema?.objects ?? []).map((object) => [object.name, object.columns.map((column) => column.name)])), [schema]);
   const extensions = useMemo(
     () => [
       editorTheme,
       Prec.highest(keymap.of([{ key: "Mod-Enter", run: () => (onRun(), true) }])),
-      ...(engine?.isSql ? [sql()] : engine?.inputStyle === "json" ? [json()] : []),
+      ...(engine?.isSql ? [sql({ schema: sqlSchema })] : engine?.inputStyle === "json" ? [json()] : []),
     ],
-    [engine?.isSql, engine?.inputStyle, onRun],
+    [engine?.isSql, engine?.inputStyle, onRun, sqlSchema],
   );
 
   return (

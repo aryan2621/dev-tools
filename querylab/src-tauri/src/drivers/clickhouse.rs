@@ -1,8 +1,8 @@
 use super::Driver;
+use crate::parsers::{json_row, ALL_ROWS};
 use crate::error::DriverResult;
 use crate::http::{send_text, with_basic_auth, Http};
 use crate::model::{QueryResult, Row, SchemaInfo};
-use crate::parsers::stringify;
 use crate::profile::ConnectionProfile;
 use async_trait::async_trait;
 use serde_json::Value;
@@ -49,7 +49,7 @@ fn present(body: &str, limit: usize) -> DriverResult<QueryResult> {
         .map(|meta| meta.iter().map(|column| column["type"].as_str().unwrap_or("").to_string()).collect())
         .unwrap_or_default();
     let rows = reply["data"].as_array().cloned().unwrap_or_default().into_iter().map(|row| -> Row {
-        row.as_array().map(|cells| cells.iter().map(stringify).collect()).unwrap_or_default()
+        json_row(&row)
     });
     Ok(QueryResult::table(columns, rows, limit).with_types(types))
 }
@@ -60,14 +60,12 @@ impl Driver for ClickHouseDriver {
         send_text(self.query("SELECT 1", 1)).await.map(|_| ())
     }
 
-    async fn disconnect(&self) {}
-
     async fn run(&self, input: &str, _operation: Option<&str>, row_limit: usize) -> DriverResult<QueryResult> {
         present(&send_text(self.query(input, row_limit)).await?, row_limit)
     }
 
     async fn schema(&self) -> DriverResult<SchemaInfo> {
-        let result = self.run(SCHEMA_SQL, None, usize::MAX / 2).await?;
+        let result = self.run(SCHEMA_SQL, None, ALL_ROWS).await?;
         Ok(SchemaInfo::from_column_rows(&result.rows))
     }
 }

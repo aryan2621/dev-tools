@@ -1,16 +1,15 @@
-import { Database, Play, Sparkles, Plus, RefreshCw, SquarePen, Table2, Unplug, X, Plug } from "lucide-react";
+import { ChevronRight, Command, Database, Play, Plug, Plus, RefreshCw, Settings, Sparkles, SquarePen, Table2, Unplug, X } from "lucide-react";
+import { ConnectionSwitcher } from "./components/ConnectionSwitcher";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { cn } from "@/lib/utils";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EditorView } from "@codemirror/view";
 import { IconAction } from "./components/Hint";
 import { CommandPicker, type PickerGroup } from "./components/CommandPicker";
 import { ConnectionForm } from "./components/ConnectionForm";
 import { HistoryPanel } from "./components/HistoryPanel";
-import { Rail, type Panel } from "./components/Rail";
-import { ConnectionList } from "./components/ConnectionList";
-import { connectionPhase } from "./components/ConnectionState";
 import { QueryTabs } from "./components/QueryTabs";
 import { SchemaPanel } from "./components/SchemaPanel";
-import { StatusBar } from "./components/StatusBar";
 import { Welcome } from "./components/Welcome";
 import { Workspace } from "./components/Workspace";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
@@ -24,8 +23,11 @@ import { useSchema } from "./hooks/useSchema";
 import { useWorkbench } from "./hooks/useWorkbench";
 import { SHORTCUTS } from "./lib/shortcuts";
 import { selectRowsDraft } from "./lib/templates";
+import { tableSql } from "./lib/tableView";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import type { Profile, SchemaObject } from "./types";
+import type { Profile, SchemaObject, TableView } from "./types";
+import { api } from "./api";
+import { attempt } from "./lib/notify";
 
 type PickerKind = "commands" | "switcher";
 
@@ -34,9 +36,8 @@ const PICKERS: Record<PickerKind, { title: string; placeholder: string }> = {
   switcher: { title: "Quick switcher", placeholder: "Switch connection or open table" },
 };
 
-const PANEL_TITLES: Record<Panel, string> = { connections: "Connections", schema: "Schema", history: "History" };
-
 const DDL_PATTERN = /^\s*(create|alter|drop|rename)\b/i;
+const DESTRUCTIVE_PATTERN = /^\s*(drop|delete|truncate|update|alter)\b/i;
 
 type Bench = ReturnType<typeof useWorkbench>;
 
@@ -47,12 +48,11 @@ export default function App() {
       profiles: bench.profiles,
       connectedIds: [...bench.connected],
       activeTab: bench.activeTab,
-      rowLimit: bench.rowLimit,
       newTab: bench.newTab,
       patchTab: bench.patchTab,
       run: bench.run,
     }),
-    [bench.profiles, bench.connected, bench.activeTab, bench.rowLimit, bench.newTab, bench.patchTab, bench.run],
+    [bench.profiles, bench.connected, bench.activeTab, bench.newTab, bench.patchTab, bench.run],
   );
   return (
     <AgentProvider context={context}>
@@ -65,20 +65,19 @@ function Shell({ bench }: { bench: Bench }) {
   const agent = useAgent();
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const { activeProfile, activeEngine, activeTab } = bench;
-  const [panel, setPanel] = useState<Panel>("connections");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [confirmRun, setConfirmRun] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Profile | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Profile | null>(null);
-  const [presetEngine, setPresetEngine] = useState<string | undefined>();
   const [picker, setPicker] = useState<PickerKind | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const selectionRef = useRef("");
 
   const live = activeProfile ? bench.connected.has(activeProfile.id) : false;
   const schemaState = useSchema(activeProfile?.id ?? null, live);
-  const phase = connectionPhase(live, activeProfile ? bench.connecting.has(activeProfile.id) : false);
 
-  const runActive = useCallback(() => {
+  const startRun = useCallback(() => {
     if (!activeTab || !live) return;
     const input = selectionRef.current.trim() || activeTab.input;
     bench.run(activeTab, selectionRef.current).then(() => {
@@ -86,9 +85,32 @@ function Shell({ bench }: { bench: Bench }) {
     });
   }, [activeTab, live, bench.run, schemaState.reload]);
 
-  const openForm = useCallback((profile: Profile | null, engineKind?: string) => {
+  const browse = useCallback(
+    (table: TableView) => {
+      if (!activeTab || !activeEngine) return;
+      const input = tableSql(activeEngine.kind, table);
+      bench.patchTab(activeTab.id, { table, input });
+      bench.run({ ...activeTab, table, input }, "");
+    },
+    [activeTab, activeEngine, bench.patchTab, bench.run],
+  );
+
+  const applyEdits = useCallback(
+    async (statements: string[]) => {
+      if (!activeTab) return false;
+      return (await attempt(() => api("apply_edits", { id: activeTab.profileId, statements }), "Changes applied", "Could not apply changes")) !== undefined;
+    },
+    [activeTab],
+  );
+
+  const runActive = useCallback(() => {
+    const input = selectionRef.current.trim() || activeTab?.input || "";
+    if (activeProfile?.options.production === "true" && DESTRUCTIVE_PATTERN.test(input)) setConfirmRun(true);
+    else startRun();
+  }, [activeProfile, activeTab, startRun]);
+
+  const openForm = useCallback((profile: Profile | null) => {
     setEditing(profile);
-    setPresetEngine(engineKind);
     setFormOpen(true);
   }, []);
 
@@ -101,9 +123,12 @@ function Shell({ bench }: { bench: Bench }) {
   const selectRows = useCallback(
     (object: SchemaObject) => {
       const draft = activeEngine && selectRowsDraft(activeEngine, object);
-      if (draft && activeProfile) bench.newTab(activeProfile.id, draft);
+      if (draft && activeProfile) {
+        const tab = bench.newTab(activeProfile.id, draft);
+        if (live) bench.run(tab, "");
+      }
     },
-    [activeEngine, activeProfile, bench.newTab],
+    [activeEngine, activeProfile, live, bench.newTab, bench.run],
   );
 
   const connectionItems = useMemo(
@@ -167,6 +192,8 @@ function Shell({ bench }: { bench: Bench }) {
       const actions: Record<string, () => void> = {
         tab: () => stepTab(shift ? -1 : 1),
         f: () => shift && document.getElementById("schema-filter")?.focus(),
+        "1": () => document.getElementById("schema-filter")?.focus(),
+        "2": () => setHistoryOpen((open) => !open),
         enter: runActive,
         t: () => activeProfile && bench.newTab(activeProfile.id),
         w: () => activeTab && bench.closeTab(activeTab.id),
@@ -188,61 +215,69 @@ function Shell({ bench }: { bench: Bench }) {
   return (
     <TooltipProvider delayDuration={400}>
       <div className="flex h-screen w-screen flex-col">
-        <div className="flex min-h-0 flex-1">
-        <Rail panel={panel} onPanel={setPanel}>
-          <IconAction label="Assistant" keys={SHORTCUTS.assistant} aria-pressed={agent.open} className={agent.open ? "bg-accent text-foreground" : undefined} onClick={() => agent.setOpen(!agent.open)}>
-            <Sparkles />
-          </IconAction>
-        </Rail>
         <ResizablePanelGroup direction="horizontal" autoSaveId="querylab-layout" className="min-h-0 flex-1">
-          <ResizablePanel id="sidebar" order={1} defaultSize={22} minSize={15} maxSize={36} className="flex flex-col bg-sidebar">
-            <div data-tauri-drag-region className="flex h-9 shrink-0 items-center gap-2 border-b pl-3 pr-2">
-              <span className="text-sm font-medium">{PANEL_TITLES[panel]}</span>
-              {panel === "connections" && (
-                <IconAction label="New connection" className="ml-auto" onClick={() => openForm(null)}>
-                  <Plus />
-                </IconAction>
-              )}
+          <ResizablePanel id="sidebar" order={1} defaultSize={22} minSize={20} maxSize={32} className="flex flex-col bg-sidebar">
+            <div data-tauri-drag-region className="h-9 shrink-0" />
+            <div className="shrink-0 px-2 pb-2">
+              <ConnectionSwitcher
+                profiles={bench.profiles}
+                engineFor={bench.engineFor}
+                active={activeProfile}
+                connected={bench.connected}
+                connecting={bench.connecting}
+                onSelect={bench.setActiveProfileId}
+                onConnect={bench.connect}
+                onDisconnect={bench.disconnect}
+                onEdit={openForm}
+                onDuplicate={(profile) => openForm({ ...profile, id: "", name: `${profile.name} copy` })}
+                onDelete={setPendingDelete}
+                onAdd={() => openForm(null)}
+              />
             </div>
-            <div className="min-h-0 flex-1">
-              {panel === "connections" && (
-                <ConnectionList
-                  profiles={bench.profiles}
-                  engineFor={bench.engineFor}
-                  activeId={activeProfile?.id ?? null}
-                  connected={bench.connected}
-                  connecting={bench.connecting}
-                  loading={bench.loading}
-                  onSelect={bench.setActiveProfileId}
-                  onConnect={bench.connect}
-                  onDisconnect={bench.disconnect}
-                  onEdit={openForm}
-                  onDelete={setPendingDelete}
-                  onAdd={() => openForm(null)}
-                />
-              )}
-              {panel === "schema" && (
-                <SchemaPanel
-                  state={schemaState}
-                  profileId={activeProfile?.id ?? null}
-                  connected={live}
-                  canSelectRows={(object) => Boolean(activeEngine && selectRowsDraft(activeEngine, object))}
-                  onSelectRows={selectRows}
-                  onInsertName={insertName}
-                />
-              )}
-              {panel === "history" && (
+            <div className="min-h-0 flex-1 border-t">
+              <SchemaPanel
+                state={schemaState}
+                profileId={activeProfile?.id ?? null}
+                connected={live}
+                canSelectRows={(object) => Boolean(activeEngine && selectRowsDraft(activeEngine, object))}
+                onSelectRows={selectRows}
+                onInsertName={insertName}
+              />
+            </div>
+            <Collapsible open={historyOpen} onOpenChange={setHistoryOpen} className="shrink-0 border-t">
+              <CollapsibleTrigger className="flex h-8 w-full items-center gap-1.5 px-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+                <ChevronRight aria-hidden className={cn("size-3 transition-transform duration-100 ease-out", historyOpen && "rotate-90")} />
+                History
+              </CollapsibleTrigger>
+              <CollapsibleContent className="h-56 border-t">
                 <HistoryPanel
                   profileId={activeProfile?.id ?? null}
                   refreshKey={activeTab?.runId ?? null}
                   onPick={(entry) => activeTab && bench.patchTab(activeTab.id, { input: entry.input, operation: entry.operation ?? activeTab.operation })}
                 />
-              )}
+              </CollapsibleContent>
+            </Collapsible>
+            <div className="flex h-9 shrink-0 items-center gap-0.5 border-t px-1.5">
+              <IconAction label="New connection" onClick={() => openForm(null)}>
+                <Plus />
+              </IconAction>
+              <span className="ml-auto flex items-center gap-0.5">
+                <IconAction label="Commands" keys={SHORTCUTS.palette} onClick={() => setPicker("commands")}>
+                  <Command />
+                </IconAction>
+                <IconAction label="Assistant" keys={SHORTCUTS.assistant} aria-pressed={agent.open} className={agent.open ? "bg-accent text-foreground" : undefined} onClick={() => agent.setOpen(!agent.open)}>
+                  <Sparkles />
+                </IconAction>
+                <IconAction label="AI settings" onClick={() => setAiSettingsOpen(true)}>
+                  <Settings />
+                </IconAction>
+              </span>
             </div>
           </ResizablePanel>
           <ResizableHandle />
           <ResizablePanel id="main" order={2} defaultSize={78} minSize={30}>
             <main className="flex h-full min-w-0 flex-col bg-background">
+              <div className="flex min-h-0 flex-1 flex-col">
               {showWorkspace ? (
                 <QueryTabs
                   tabs={bench.tabs.map((tab) => ({ id: tab.id, title: tab.title, busy: tab.runId !== null }))}
@@ -250,6 +285,7 @@ function Shell({ bench }: { bench: Bench }) {
                   onSelect={bench.selectTab}
                   onClose={bench.closeTab}
                   onNew={() => bench.newTab(activeProfile.id)}
+                  onRename={(id, title) => bench.patchTab(id, { title })}
                 >
                   <Workspace
                     key={activeTab.id}
@@ -265,39 +301,41 @@ function Shell({ bench }: { bench: Bench }) {
                     onExplain={() => {
                       agent.ask(activeTab.error ? "Explain the error in my open query and suggest a fix." : "Explain my open query and suggest improvements.");
                     }}
+                    schema={schemaState.schema ?? undefined}
                     rowLimit={bench.rowLimit}
                     onRowLimit={bench.setRowLimit}
+                    onBrowse={browse}
+                    onApply={applyEdits}
                   />
                 </QueryTabs>
               ) : (
                 <>
                 <div data-tauri-drag-region className="h-9 shrink-0 border-b bg-sidebar" />
                 <Welcome
-                  engines={bench.engines}
+                  engine={activeEngine}
                   profile={activeProfile}
                   live={live}
                   loading={bench.loading}
-                  onNewConnection={(engineKind) => openForm(null, engineKind)}
+                  onNewConnection={() => openForm(null)}
                   onConnect={bench.connect}
                   onNewTab={(id) => bench.newTab(id)}
                 />
                 </>
               )}
+              </div>
             </main>
           </ResizablePanel>
           {agent.open && (
             <>
               <ResizableHandle />
               <ResizablePanel id="assistant" order={3} defaultSize={28} minSize={20} maxSize={45}>
-                <AgentPanel profile={activeProfile} tab={activeTab} onSettings={() => setAiSettingsOpen(true)} />
+                <AgentPanel onSettings={() => setAiSettingsOpen(true)} />
               </ResizablePanel>
             </>
           )}
         </ResizablePanelGroup>
-        </div>
-        <StatusBar profile={activeProfile} engine={activeEngine} phase={phase} running={activeTab?.runId != null} />
       </div>
-      <ConnectionForm open={formOpen} engines={bench.engines} initial={editing} engineKind={presetEngine} onClose={() => setFormOpen(false)} onSave={bench.saveProfile} />
+      <ConnectionForm open={formOpen} engines={bench.engines} initial={editing} onClose={() => setFormOpen(false)} onSave={bench.saveProfile} />
       <CommandPicker
         open={picker !== null}
         title={PICKERS[picker ?? "commands"].title}
@@ -314,6 +352,18 @@ function Shell({ bench }: { bench: Bench }) {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => pendingDelete && bench.deleteProfile(pendingDelete.id)}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={confirmRun} onOpenChange={setConfirmRun}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Run on {activeProfile?.name}?</AlertDialogTitle>
+            <AlertDialogDescription>This connection is marked as production and the statement can change or delete data.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={startRun}>Run</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -1,7 +1,7 @@
 const isMac = /Mac/i.test(navigator.platform);
 
-export const MOD = isMac ? "⌘" : "Ctrl";
-export const ENTER = "↵";
+const MOD = isMac ? "⌘" : "Ctrl";
+const ENTER = "↵";
 
 export const SHORTCUTS = {
   run: [MOD, ENTER],
