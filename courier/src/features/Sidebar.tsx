@@ -125,7 +125,7 @@ function Row({
   children,
 }: RowProps) {
   return (
-    <ContextMenu>
+    <ContextMenu modal={false}>
       <ContextMenuTrigger asChild>
         <li role="none" className="group relative px-1.5">
           <button
@@ -170,7 +170,7 @@ function Row({
               </span>
             )}
           </button>
-          <DropdownMenu>
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
@@ -361,7 +361,7 @@ export function Sidebar({
         actions={nodeActions(target, [
           { label: "Duplicate", onSelect: () => duplicate(request) },
           {
-            label: "Move to…",
+            label: "Move to",
             onSelect: () => setAction({ type: "move", target }),
           },
         ])}
@@ -465,7 +465,7 @@ export function Sidebar({
               </div>
             )}
             {courier.collections.length === 0 ? (
-              <Empty className="justify-start px-4 pt-10">
+              <Empty className="px-4">
                 <EmptyMedia>
                   <Boxes />
                 </EmptyMedia>

@@ -43,7 +43,7 @@ export function HistoryPanel() {
 
   if (entries.length === 0) {
     return (
-      <Empty className="justify-start px-4 pt-10">
+      <Empty className="px-4">
         <EmptyHeader>
           <EmptyTitle>No history yet</EmptyTitle>
           <EmptyDescription>Requests you send appear here.</EmptyDescription>

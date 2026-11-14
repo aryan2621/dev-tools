@@ -226,7 +226,7 @@ export function AgentPanel({ onSettings }: { onSettings: () => void }) {
                   aria-hidden="true"
                   className="size-2 animate-pulse-dot rounded-full bg-primary"
                 />
-                Thinking…
+                Thinking
               </p>
             )}
           </div>

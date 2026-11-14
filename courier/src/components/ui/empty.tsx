@@ -5,14 +5,14 @@ import { cn } from "@/lib/utils"
 function Empty({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
-      className={cn("flex h-full min-h-0 flex-col items-start justify-center gap-3 p-6", className)}
+      className={cn("flex h-full min-h-0 flex-col items-center justify-center gap-3 p-6 text-center", className)}
       {...props}
     />
   )
 }
 
 function EmptyHeader({ className, ...props }: React.ComponentProps<"div">) {
-  return <div className={cn("flex max-w-sm flex-col gap-1", className)} {...props} />
+  return <div className={cn("flex max-w-sm flex-col items-center gap-1", className)} {...props} />
 }
 
 function EmptyMedia({ className, ...props }: React.ComponentProps<"div">) {

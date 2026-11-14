@@ -107,7 +107,7 @@ function PendingResponse() {
           aria-hidden="true"
           className="size-2 animate-pulse-dot rounded-full bg-primary"
         />
-        Sending request...
+        Sending request
       </div>
       <div className="w-72 space-y-1.5" aria-hidden="true">
         <Skeleton className="h-3" />

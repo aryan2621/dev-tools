@@ -23,13 +23,13 @@ export function EmptyWorkspace({ onImport }: EmptyWorkspaceProps) {
   }, []);
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      <div className="max-w-xl px-8 py-8">
+    <div className="flex min-h-0 flex-1 overflow-y-auto">
+      <div className="m-auto w-full max-w-xl px-8 py-8 text-center">
         <h1 className="text-lg font-semibold">No request open</h1>
         <p className="mt-1 text-base text-muted-foreground">
           Pick a request from the sidebar, start a new one, or paste a cURL command.
         </p>
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex justify-center gap-2">
           <Button onClick={startRequest}>
             <Plus aria-hidden="true" />
             New request
@@ -41,7 +41,7 @@ export function EmptyWorkspace({ onImport }: EmptyWorkspaceProps) {
           </Button>
         </div>
         {history.length > 0 && (
-          <section aria-labelledby="recent-heading" className="mt-8">
+          <section aria-labelledby="recent-heading" className="mt-8 text-left">
             <h2 id="recent-heading" className="mb-1 text-sm font-medium text-muted-foreground">
               Recent
             </h2>
